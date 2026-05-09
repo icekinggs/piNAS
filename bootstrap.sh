@@ -30,7 +30,7 @@ fi
 # ---------- configuração ----------
 # Você pode sobrescrever via variáveis de ambiente:
 #   REPO_URL=https://github.com/fulano/pinas.git INSTALL_DIR=/opt/pinas ./bootstrap.sh
-REPO_URL="${REPO_URL:-https://github.com/SEU_USUARIO/pinas.git}"
+REPO_URL="${REPO_URL:-https://github.com/icekinggs/piNAS.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/pinas}"
 USB_DEVICE="${USB_DEVICE:-}"          # ex: /dev/sda1 — vazio = pula automount
