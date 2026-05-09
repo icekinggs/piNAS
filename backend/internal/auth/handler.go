@@ -29,9 +29,10 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/logout", h.logout)
 }
 
-// MeRoutes precisa de auth — registrar atrás de middleware.JWTAuth.
-func (h *Handler) MeRoutes(r chi.Router) {
-	r.Get("/me", h.me)
+// MeHandler é o handler direto de GET /auth/me.
+// Registrado fora do r.Route("/auth", ...) porque o chi não permite Mount() duplicado.
+func (h *Handler) MeHandler(w http.ResponseWriter, r *http.Request) {
+	h.me(w, r)
 }
 
 const refreshCookieName = "pinas_refresh"
