@@ -4,19 +4,24 @@
 # Script ÚNICO de instalação a partir do zero num Raspberry Pi com
 # Ubuntu Server 24.04 LTS ARM64 recém-instalado.
 #
-# Uso (via curl):
-#   curl -fsSL https://raw.githubusercontent.com/<seu-usuario>/pinas/main/bootstrap.sh | sudo bash
-#
 # Uso (clonando manualmente):
-#   git clone https://github.com/<seu-usuario>/pinas.git
-#   cd pinas
+#   git clone https://github.com/icekinggs/piNAS.git
+#   cd piNAS
 #   sudo ./bootstrap.sh
+#
+# Variáveis opcionais (use com `sudo VAR=valor ./bootstrap.sh`):
+#   DATA_DIR        Onde ficam os arquivos do NAS. Padrão: /srv/pinas/data
+#                   Pra integrar com Samba existente: DATA_DIR=/home/seu_usuario
+#   HTTP_PORT       Porta HTTP. Padrão: auto-detecta (80 ou 8080 se ocupada)
+#   HTTPS_PORT      Porta HTTPS. Padrão: auto-detecta (443 ou 8443 se ocupada)
+#   USB_DEVICE      Disco USB pra automount. Ex: /dev/sda1. Padrão: vazio
+#   SAMBA_USER      Usuário Samba a criar. Padrão: vazio
+#   INSTALL_DIR     Onde instalar o código. Padrão: /opt/pinas
 #
 # O script é idempotente: pode rodar de novo se algo der errado.
 
 set -euo pipefail
 
-# ---------- helpers ----------
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info()  { echo -e "${BLUE}==>${NC} $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
@@ -28,35 +33,25 @@ if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
 fi
 
 # ---------- configuração ----------
-# Você pode sobrescrever via variáveis de ambiente:
-#   REPO_URL=https://github.com/fulano/pinas.git INSTALL_DIR=/opt/pinas ./bootstrap.sh
 REPO_URL="${REPO_URL:-https://github.com/icekinggs/piNAS.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/pinas}"
-USB_DEVICE="${USB_DEVICE:-}"          # ex: /dev/sda1 — vazio = pula automount
-SAMBA_USER="${SAMBA_USER:-}"          # vazio = pula samba
-HTTP_PORT="${HTTP_PORT:-}"            # vazio = auto-detecta (80 ou 8080)
-HTTPS_PORT="${HTTPS_PORT:-}"          # vazio = auto-detecta (443 ou 8443)
+DATA_DIR="${DATA_DIR:-/srv/pinas/data}"
+USB_DEVICE="${USB_DEVICE:-}"
+SAMBA_USER="${SAMBA_USER:-}"
+HTTP_PORT="${HTTP_PORT:-}"
+HTTPS_PORT="${HTTPS_PORT:-}"
 
 # ---------- sanity checks ----------
 info "Verificando ambiente..."
-
 if ! grep -q "Ubuntu" /etc/os-release; then
-	warn "Este script foi testado em Ubuntu Server 24.04. Pode não funcionar em outras distros."
+	warn "Testado em Ubuntu Server 24.04. Outras distros podem ter problemas."
 fi
-
 ARCH=$(dpkg --print-architecture)
-if [[ "$ARCH" != "arm64" && "$ARCH" != "amd64" ]]; then
-	warn "Arquitetura $ARCH não é arm64/amd64. Pode haver problemas com Docker images."
-fi
-
 ok "Ambiente OK ($(lsb_release -ds 2>/dev/null || echo desconhecido), $ARCH)"
 
-# ---------- detecção de portas em uso ----------
-# Pi-hole, nginx pessoais ou outros serviços podem já estar usando 80/443.
-# Detecta e usa portas alternativas (8080/8443) se necessário.
+# ---------- detecção de portas ----------
 info "Verificando portas disponíveis..."
-
 port_in_use() {
 	ss -tln | awk '{print $4}' | grep -qE ":${1}\$"
 }
@@ -64,79 +59,65 @@ port_in_use() {
 if [[ -z "$HTTP_PORT" ]]; then
 	if port_in_use 80; then
 		HTTP_PORT=8080
-		WHO_80=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print $NF}' | head -1)
-		warn "Porta 80 já está em uso por: ${WHO_80:-desconhecido}"
-		warn "Usando HTTP_PORT=8080 para o PiNAS"
+		WHO=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print $NF}' | head -1 | sed 's/users://;s/[",()]//g')
+		warn "Porta 80 em uso por: ${WHO:-?} → usando 8080"
 	else
 		HTTP_PORT=80
 	fi
 fi
-
 if [[ -z "$HTTPS_PORT" ]]; then
 	if port_in_use 443; then
 		HTTPS_PORT=8443
-		WHO_443=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:443$/ {print $NF}' | head -1)
-		warn "Porta 443 já está em uso por: ${WHO_443:-desconhecido}"
-		warn "Usando HTTPS_PORT=8443 para o PiNAS"
+		WHO=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:443$/ {print $NF}' | head -1 | sed 's/users://;s/[",()]//g')
+		warn "Porta 443 em uso por: ${WHO:-?} → usando 8443"
 	else
 		HTTPS_PORT=443
 	fi
 fi
-
 ok "Portas: HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT"
 
-# ---------- 1. Pacotes do sistema ----------
-info "Atualizando apt e instalando dependências base..."
+# ---------- 1. Pacotes ----------
+info "Instalando dependências..."
 apt-get update -y
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
 	git curl wget jq ca-certificates gnupg lsb-release \
-	openssh-server \
-	ufw fail2ban \
-	smartmontools \
-	avahi-daemon \
-	rsync
-
+	openssh-server ufw fail2ban smartmontools avahi-daemon rsync
 ok "Pacotes base instalados"
 
 # ---------- 2. Docker ----------
 if ! command -v docker >/dev/null 2>&1; then
-	info "Instalando Docker (engine oficial)..."
-	# Repositório oficial do Docker é mais atualizado que o do Ubuntu.
+	info "Instalando Docker..."
 	install -m 0755 -d /etc/apt/keyrings
 	curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
 		gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 	chmod a+r /etc/apt/keyrings/docker.gpg
-
 	UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
 	echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $UBUNTU_CODENAME stable" \
 		> /etc/apt/sources.list.d/docker.list
-
 	apt-get update -y
 	DEBIAN_FRONTEND=noninteractive apt-get install -y \
 		docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
 	systemctl enable --now docker
-	ok "Docker instalado: $(docker --version)"
-else
-	ok "Docker já presente: $(docker --version)"
 fi
+ok "Docker: $(docker --version)"
 
-# ---------- 3. Node.js (para build do frontend) ----------
-if ! command -v node >/dev/null 2>&1 || [[ "$(node --version | cut -dv -f2 | cut -d. -f1)" -lt 20 ]]; then
-	info "Instalando Node.js 22 LTS..."
+# ---------- 3. Node.js ----------
+if ! command -v node >/dev/null 2>&1 || [[ "$(node --version 2>/dev/null | cut -dv -f2 | cut -d. -f1)" -lt 20 ]]; then
+	info "Instalando Node.js 22..."
 	curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 	DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-	ok "Node.js instalado: $(node --version)"
-else
-	ok "Node.js já presente: $(node --version)"
 fi
+ok "Node.js: $(node --version)"
 
-# ---------- 4. Clone do repositório ----------
+# ---------- 4. Repositório ----------
 info "Clonando PiNAS em $INSTALL_DIR..."
 if [[ -d "$INSTALL_DIR/.git" ]]; then
-	info "Repo já existe, fazendo pull..."
-	git -C "$INSTALL_DIR" fetch origin
-	git -C "$INSTALL_DIR" reset --hard "origin/$REPO_BRANCH"
+	cd "$INSTALL_DIR"
+	# Descarta alterações locais EXCETO o override (gerado por nós).
+	git stash push --quiet -- $(git diff --name-only | grep -v override) 2>/dev/null || true
+	git checkout -- . 2>/dev/null || true
+	git fetch origin
+	git reset --hard "origin/$REPO_BRANCH"
 else
 	rm -rf "$INSTALL_DIR"
 	git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
@@ -144,99 +125,122 @@ fi
 cd "$INSTALL_DIR"
 ok "Código em $INSTALL_DIR ($(git rev-parse --short HEAD))"
 
-# ---------- ajusta portas no docker-compose ----------
-# Se as portas detectadas/escolhidas forem diferentes das padrão, sobrescreve.
-# Usamos um override file pra não sujar o docker-compose.yml versionado.
-COMPOSE_OVERRIDE="$INSTALL_DIR/docker-compose.override.yml"
-cat > "$COMPOSE_OVERRIDE" <<EOF
-# Auto-gerado pelo bootstrap.sh — ajusta portas conforme ambiente.
-# Não comite este arquivo. Edite via variáveis HTTP_PORT/HTTPS_PORT.
-services:
-  caddy:
-    ports:
-      - "${HTTP_PORT}:80"
-      - "${HTTPS_PORT}:443"
-      - "${HTTPS_PORT}:443/udp"
-EOF
-ok "docker-compose.override.yml gerado (portas $HTTP_PORT/$HTTPS_PORT)"
-
 # ---------- 5. .env ----------
 if [[ ! -f "$INSTALL_DIR/.env" ]]; then
-	info "Criando .env (gerando senha de admin aleatória)..."
 	ADMIN_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
-	IP_LOCAL=$(hostname -I | awk '{print $1}')
 	HOSTNAME_LOCAL=$(hostname).local
-
 	cat > "$INSTALL_DIR/.env" <<EOF
 # Gerado pelo bootstrap.sh em $(date -Iseconds)
 PINAS_HOST=$HOSTNAME_LOCAL
 PINAS_ALLOWED_ORIGIN=https://$HOSTNAME_LOCAL
-
 PINAS_ADMIN_USERNAME=admin
 PINAS_ADMIN_PASSWORD=$ADMIN_PASS
-
 PINAS_ENV=production
 PINAS_LOG_LEVEL=info
-
 TZ=America/Sao_Paulo
 EOF
 	chmod 600 "$INSTALL_DIR/.env"
-
-	# Salva a senha numa pasta protegida pra você poder consultar depois.
 	install -d -m 0700 /root/.pinas
 	echo "admin: $ADMIN_PASS" > /root/.pinas/admin-password.txt
 	chmod 600 /root/.pinas/admin-password.txt
-
-	ok ".env criado. Senha do admin: ${YELLOW}$ADMIN_PASS${NC}"
-	ok "Senha também salva em /root/.pinas/admin-password.txt"
+	ok ".env criado, senha em /root/.pinas/admin-password.txt"
 else
-	ok ".env já existe, mantendo"
+	ok ".env já existe"
 fi
 
-# ---------- 6. Diretórios persistentes ----------
+# ---------- 6. Disco USB ----------
+if [[ -n "$USB_DEVICE" ]]; then
+	if [[ -b "$USB_DEVICE" ]]; then
+		bash "$INSTALL_DIR/scripts/automount-disk.sh" "$USB_DEVICE" || warn "automount falhou"
+		DATA_DIR="/srv/pinas/data"
+	else
+		warn "$USB_DEVICE não é um device. Pulando."
+	fi
+fi
+
+# ---------- 7. Detecção de UID:GID do dono dos dados ----------
+# Esta é a peça que evita problemas de permissão entre host e container.
+info "Detectando dono de $DATA_DIR..."
+
+if [[ ! -d "$DATA_DIR" ]]; then
+	# Cria com permissões de quem invocou sudo (não root).
+	REAL_USER="${SUDO_USER:-$(getent passwd 1000 | cut -d: -f1)}"
+	if [[ -z "$REAL_USER" || "$REAL_USER" == "root" ]]; then
+		REAL_USER=$(getent passwd 1000 | cut -d: -f1)
+	fi
+	install -d -m 0750 -o "$REAL_USER" -g "$REAL_USER" "$DATA_DIR" 2>/dev/null || \
+		install -d -m 0750 "$DATA_DIR"
+	ok "Criado $DATA_DIR (dono: ${REAL_USER:-root})"
+fi
+
+DATA_UID=$(stat -c '%u' "$DATA_DIR")
+DATA_GID=$(stat -c '%g' "$DATA_DIR")
+DATA_OWNER=$(stat -c '%U:%G' "$DATA_DIR")
+ok "Dados: $DATA_DIR (dono: $DATA_OWNER, UID:GID = $DATA_UID:$DATA_GID)"
+
+# ---------- 8. Diretórios persistentes ----------
 info "Criando /srv/pinas/ ..."
 install -d -m 0750 /srv/pinas
-install -d -m 0750 /srv/pinas/db
-install -d -m 0750 /srv/pinas/data
-install -d -m 0750 /srv/pinas/data/users
-install -d -m 0775 /srv/pinas/data/shared
-install -d -m 0750 /srv/pinas/thumbs
-install -d -m 0750 /srv/pinas/logs
-install -d -m 0700 /srv/pinas/secrets
-chown -R 1000:1000 /srv/pinas
-ok "Diretórios em /srv/pinas/ prontos"
+install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/db
+install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/thumbs
+install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/logs
+install -d -m 0700 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/secrets
+ok "Diretórios persistentes prontos"
 
-# ---------- 7. UFW ----------
-info "Configurando firewall (UFW)..."
+# ---------- 9. docker-compose.override.yml ----------
+# Override gerado por host. NÃO vai pro Git.
+# Cobre apenas: user (UID:GID dinâmico) e volume de dados (DATA_DIR).
+# Portas: editamos docker-compose.yml direto via sed (mais robusto que `!reset`).
+info "Gerando docker-compose.override.yml..."
+cat > "$INSTALL_DIR/docker-compose.override.yml" <<EOF
+# Auto-gerado pelo bootstrap.sh — específico desta instalação.
+# NÃO comite este arquivo (já está no .gitignore).
+# Para regerar, rode: sudo ./bootstrap.sh
+
+services:
+  pinas-api:
+    user: "${DATA_UID}:${DATA_GID}"
+    volumes:
+      - ${DATA_DIR}:/var/lib/pinas/data
+EOF
+ok "Override: user=$DATA_UID:$DATA_GID, data=$DATA_DIR"
+
+# ---------- 9b. portas no docker-compose.yml ----------
+# Compose !reset só existe em >= 2.24. Pra compatibilidade ampla, editamos direto.
+# Backup antes de qualquer alteração.
+if [[ "$HTTP_PORT" != "80" || "$HTTPS_PORT" != "443" ]]; then
+	info "Ajustando portas no docker-compose.yml (HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT)..."
+	cp "$INSTALL_DIR/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml.bak"
+	sed -i \
+		-e "s|- \"80:80\"|- \"${HTTP_PORT}:80\"|" \
+		-e "s|- \"443:443\"|- \"${HTTPS_PORT}:443\"|" \
+		-e "s|- \"443:443/udp\"|- \"${HTTPS_PORT}:443/udp\"|" \
+		"$INSTALL_DIR/docker-compose.yml"
+	ok "Portas no compose: $HTTP_PORT, $HTTPS_PORT (backup em docker-compose.yml.bak)"
+fi
+
+# ---------- 10. UFW ----------
+info "Configurando UFW..."
 ufw --force reset >/dev/null
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
-ufw allow 22/tcp comment 'ssh/sftp' >/dev/null
-ufw allow ${HTTP_PORT}/tcp comment 'pinas http' >/dev/null
-ufw allow ${HTTPS_PORT}/tcp comment 'pinas https' >/dev/null
-ufw allow ${HTTPS_PORT}/udp comment 'pinas http3' >/dev/null
-# Se PiNAS estiver em portas alternativas, libera 80/443 também (Pi-hole etc).
-if [[ "$HTTP_PORT" != "80" ]]; then
-	ufw allow 80/tcp comment 'outro serviço (pihole?)' >/dev/null
-fi
-if [[ "$HTTPS_PORT" != "443" ]]; then
-	ufw allow 443/tcp comment 'outro serviço (pihole?)' >/dev/null
-fi
-ufw allow 137,138/udp comment 'samba netbios' >/dev/null
-ufw allow 139,445/tcp comment 'samba' >/dev/null
-ufw allow 5353/udp comment 'mdns' >/dev/null
-ufw allow 53/tcp comment 'dns (pihole se houver)' >/dev/null
-ufw allow 53/udp comment 'dns (pihole se houver)' >/dev/null
+ufw allow 22/tcp >/dev/null
+ufw allow ${HTTP_PORT}/tcp >/dev/null
+ufw allow ${HTTPS_PORT}/tcp >/dev/null
+ufw allow ${HTTPS_PORT}/udp >/dev/null
+[[ "$HTTP_PORT" != "80" ]]   && ufw allow 80/tcp >/dev/null
+[[ "$HTTPS_PORT" != "443" ]] && ufw allow 443/tcp >/dev/null
+ufw allow 137,138/udp >/dev/null
+ufw allow 139,445/tcp >/dev/null
+ufw allow 5353/udp >/dev/null
+ufw allow 53/tcp >/dev/null
+ufw allow 53/udp >/dev/null
 ufw --force enable >/dev/null
-ok "UFW ativo (portas $HTTP_PORT/$HTTPS_PORT abertas)"
+ok "UFW ativo"
 
-# ---------- 8. Avahi/mDNS ----------
+# ---------- 11. Avahi & Fail2Ban ----------
 systemctl enable --now avahi-daemon
-ok "Avahi (mDNS .local) ativo"
-
-# ---------- 9. Fail2Ban ----------
-info "Configurando Fail2Ban..."
-cat > /etc/fail2ban/jail.d/pinas.local <<EOF
+cat > /etc/fail2ban/jail.d/pinas.local <<'EOF'
 [sshd]
 enabled = true
 maxretry = 5
@@ -244,83 +248,58 @@ bantime = 1h
 EOF
 systemctl enable --now fail2ban
 systemctl restart fail2ban
-ok "Fail2Ban ativo"
+ok "Avahi + Fail2Ban ativos"
 
-# ---------- 10. Disco USB (opcional) ----------
-if [[ -n "$USB_DEVICE" ]]; then
-	info "Montando disco USB $USB_DEVICE em /srv/pinas/data..."
-	if [[ ! -b "$USB_DEVICE" ]]; then
-		warn "$USB_DEVICE não encontrado. Pulando."
-	else
-		bash "$INSTALL_DIR/scripts/automount-disk.sh" "$USB_DEVICE" || warn "automount falhou"
-	fi
-else
-	warn "USB_DEVICE não definido. Pulando automount. Para montar depois:"
-	echo "    sudo $INSTALL_DIR/scripts/automount-disk.sh /dev/sdXY"
-fi
-
-# ---------- 11. Samba (opcional) ----------
+# ---------- 12. Samba ----------
 if [[ -n "$SAMBA_USER" ]]; then
-	info "Configurando Samba para usuário '$SAMBA_USER'..."
+	info "Configurando Samba para '$SAMBA_USER'..."
 	apt-get install -y samba samba-common-bin
 	bash "$INSTALL_DIR/scripts/samba-setup.sh" "$SAMBA_USER" || warn "samba-setup falhou"
-else
-	warn "SAMBA_USER não definido. Para configurar SMB depois:"
-	echo "    sudo apt-get install -y samba"
-	echo "    sudo $INSTALL_DIR/scripts/samba-setup.sh <usuario>"
 fi
 
-# ---------- 12. Build do frontend ----------
-info "Fazendo build do frontend (pode demorar 1-3 min no Pi 4)..."
+# ---------- 13. Build do frontend ----------
+info "Build do frontend (1-3 min no Pi 4)..."
 cd "$INSTALL_DIR/frontend"
-if [[ ! -d node_modules ]]; then
-	npm ci 2>/dev/null || npm install
-fi
+[[ -d node_modules ]] || (npm ci 2>/dev/null || npm install)
 npm run build
-ok "Frontend buildado em $INSTALL_DIR/frontend/build/"
+ok "Frontend OK"
 
-# ---------- 13. Docker compose ----------
+# ---------- 14. Stack Docker ----------
 cd "$INSTALL_DIR"
-info "Subindo o stack Docker (build da imagem do backend pode demorar 3-5 min no Pi)..."
+info "Subindo stack (build do backend leva 5-10 min no Pi 4)..."
 docker compose pull caddy 2>/dev/null || true
 docker compose up -d --build
 
-# Espera o healthcheck.
-info "Aguardando o backend ficar pronto..."
+info "Aguardando backend ficar healthy..."
 for i in $(seq 1 60); do
 	if docker compose ps pinas-api 2>/dev/null | grep -q "healthy"; then
 		ok "Backend healthy"
 		break
 	fi
 	sleep 2
-	if [[ $i -eq 60 ]]; then
-		warn "Backend não ficou healthy em 2 min. Verifique: docker compose logs pinas-api"
-	fi
+	[[ $i -eq 60 ]] && warn "Backend não ficou healthy em 2 min."
 done
 
-# ---------- 14. systemd unit (auto-start no boot) ----------
-info "Instalando unit systemd para auto-start..."
+# ---------- 15. systemd ----------
+info "Registrando systemd unit..."
 sed "s|/opt/pinas|$INSTALL_DIR|g" "$INSTALL_DIR/deploy/systemd/pinas.service" \
 	> /etc/systemd/system/pinas.service
 systemctl daemon-reload
 systemctl enable pinas.service >/dev/null
-ok "Unit pinas.service registrado e habilitado no boot"
+ok "pinas.service habilitado no boot"
 
-# ---------- 15. Resumo ----------
+# ---------- 16. Resumo ----------
 IP_LOCAL=$(hostname -I | awk '{print $1}')
 HOSTNAME_LOCAL=$(hostname).local
 ADMIN_PASS=$(grep '^PINAS_ADMIN_PASSWORD=' "$INSTALL_DIR/.env" | cut -d= -f2-)
+URL_SUFFIX=""
+[[ "$HTTPS_PORT" != "443" ]] && URL_SUFFIX=":$HTTPS_PORT"
 
 echo
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║                  PiNAS instalado com sucesso!                 ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo
-URL_SUFFIX=""
-if [[ "$HTTPS_PORT" != "443" ]]; then
-	URL_SUFFIX=":$HTTPS_PORT"
-fi
-
 echo -e "  ${BLUE}Acesso web:${NC}       https://${HOSTNAME_LOCAL}${URL_SUFFIX}"
 echo -e "                     https://${IP_LOCAL}${URL_SUFFIX}"
 echo
@@ -328,16 +307,17 @@ echo -e "  ${BLUE}Login admin:${NC}      admin"
 echo -e "  ${BLUE}Senha:${NC}            $ADMIN_PASS"
 echo -e "                     (também em /root/.pinas/admin-password.txt)"
 echo
-echo -e "  ${YELLOW}Aviso:${NC} o navegador vai mostrar erro de certificado na 1ª vez."
-echo -e "         Clique em 'Avançado' > 'Continuar mesmo assim' (é só TLS local)."
+echo -e "  ${BLUE}Pasta de dados:${NC}   $DATA_DIR  (UID:GID $DATA_UID:$DATA_GID)"
+echo
+echo -e "  ${YELLOW}Aviso:${NC} navegador mostra 'conexão não privada' na 1ª vez."
+echo -e "         É TLS local. Clique em 'Avançado' > 'Continuar'."
 echo
 echo -e "  ${BLUE}Comandos úteis:${NC}"
-echo -e "    docker compose -f $INSTALL_DIR/docker-compose.yml logs -f"
-echo -e "    docker compose -f $INSTALL_DIR/docker-compose.yml ps"
+echo -e "    cd $INSTALL_DIR && sudo docker compose ps"
+echo -e "    cd $INSTALL_DIR && sudo docker compose logs -f"
 echo -e "    sudo systemctl restart pinas"
 echo
-echo -e "  ${BLUE}Próximos passos opcionais:${NC}"
-[[ -z "$USB_DEVICE" ]] && echo -e "    • Montar disco USB:  sudo $INSTALL_DIR/scripts/automount-disk.sh /dev/sdXY"
-[[ -z "$SAMBA_USER" ]] && echo -e "    • Configurar SMB:    sudo $INSTALL_DIR/scripts/samba-setup.sh <usuario>"
-echo -e "    • Backup automatizado:  crontab -e  →  0 3 * * * $INSTALL_DIR/scripts/backup.sh"
+[[ -z "$USB_DEVICE" ]] && echo -e "  ${BLUE}Próximos passos opcionais:${NC}"
+[[ -z "$USB_DEVICE" ]] && echo -e "    • Disco USB:  sudo $INSTALL_DIR/scripts/automount-disk.sh /dev/sdXY"
+[[ -z "$SAMBA_USER" ]] && echo -e "    • SMB:        sudo $INSTALL_DIR/scripts/samba-setup.sh <usuario>"
 echo
