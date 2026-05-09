@@ -70,9 +70,11 @@ services:
     container_name: pinas-caddy
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"     # HTTP/3
+      # Portas alternativas porque o Pi-hole já usa 80/443.
+      # Acesse o PiNAS via https://pinas.local:8443
+      - "8080:80"
+      - "8443:443"
+      - "8443:443/udp"     # HTTP/3
     environment:
       PINAS_HOST: ${PINAS_HOST:-pinas.local}
     volumes:
