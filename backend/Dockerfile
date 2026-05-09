@@ -9,8 +9,11 @@ RUN apk add --no-cache gcc musl-dev sqlite-dev
 WORKDIR /src
 
 # Cache de dependências.
-COPY go.mod go.sum ./
-RUN go mod download
+# go.sum pode não existir no primeiro build (será gerado por go mod download).
+# Por isso copiamos com glob: se existir, vem junto; se não, só go.mod basta.
+COPY go.mod ./
+COPY go.su[m] ./
+RUN go mod download && go mod tidy
 
 # Copia o código.
 COPY . .
