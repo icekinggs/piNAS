@@ -48,7 +48,9 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/healthz"]
+      # wget -O - faz GET (em vez de HEAD do --spider) e descarta o output.
+      # O endpoint /api/v1/healthz só responde GET (não HEAD), por isso forçamos.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/healthz | grep -q ok || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -70,11 +72,12 @@ services:
     container_name: pinas-caddy
     restart: unless-stopped
     ports:
-      # Portas alternativas porque o Pi-hole já usa 80/443.
-      # Acesse o PiNAS via https://pinas.local:8443
-      - "8080:80"
-      - "8443:443"
-      - "8443:443/udp"     # HTTP/3
+      # Portas padrão. Para mudar (ex: conflito com Pi-hole), crie um
+      # docker-compose.override.yml com seções 'caddy: ports: ...'.
+      # O bootstrap.sh detecta conflitos e gera o override automaticamente.
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
     environment:
       PINAS_HOST: ${PINAS_HOST:-pinas.local}
     volumes:
