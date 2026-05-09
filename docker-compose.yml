@@ -1,6 +1,9 @@
 # PiNAS — Docker Compose
-# Roda Caddy (reverse proxy + TLS interno) e o backend Go.
-# Samba, sshd, ufw e fail2ban ficam no host (NÃO containerizados).
+#
+# IMPORTANTE: Este arquivo contém os DEFAULTS do projeto.
+# Configurações específicas do seu host (UID:GID, portas, caminhos)
+# são geradas pelo bootstrap.sh em docker-compose.override.yml.
+# Você não precisa editar este arquivo.
 
 services:
   pinas-api:
@@ -26,18 +29,16 @@ services:
       PINAS_LOG_LEVEL: ${PINAS_LOG_LEVEL:-info}
       TZ: ${TZ:-America/Sao_Paulo}
     volumes:
-      # Persistência: banco, secrets, thumbs, logs.
       - /srv/pinas/db:/var/lib/pinas/db
       - /srv/pinas/secrets:/var/lib/pinas/secrets
       - /srv/pinas/thumbs:/var/lib/pinas/thumbs
       - /srv/pinas/logs:/var/lib/pinas/logs
-      # Disco do usuário (montagem do USB no host -> jail dentro do container).
+      # Pasta de dados — sobrescrita pelo override.yml gerado pelo bootstrap.
+      # Default aqui é /srv/pinas/data, mas o bootstrap pode apontar pra
+      # /home/<user> ou um disco USB conforme detectado.
       - /srv/pinas/data:/var/lib/pinas/data
     networks:
       - pinas
-    # Métricas do host (CPU/RAM/temp) precisam de leitura de /proc e /sys.
-    # Read-only para minimizar superfície.
-    read_only: false
     cap_drop:
       - ALL
     cap_add:
@@ -48,14 +49,12 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      # wget -O - faz GET (em vez de HEAD do --spider) e descarta o output.
-      # O endpoint /api/v1/healthz só responde GET (não HEAD), por isso forçamos.
+      # GET via wget (HEAD não é suportado pelo endpoint).
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/healthz | grep -q ok || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
-    # Limites pensados para Raspberry Pi 4 (4GB).
     deploy:
       resources:
         limits:
@@ -72,17 +71,16 @@ services:
     container_name: pinas-caddy
     restart: unless-stopped
     ports:
-      # Portas padrão. Para mudar (ex: conflito com Pi-hole), crie um
-      # docker-compose.override.yml com seções 'caddy: ports: ...'.
-      # O bootstrap.sh detecta conflitos e gera o override automaticamente.
+      # Portas padrão. O bootstrap detecta conflitos (Pi-hole, nginx, etc)
+      # e gera docker-compose.override.yml com portas alternativas (8080/8443).
       - "80:80"
       - "443:443"
-      - "443:443/udp"     # HTTP/3
+      - "443:443/udp"
     environment:
       PINAS_HOST: ${PINAS_HOST:-pinas.local}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./frontend/build:/srv/frontend:ro    # build estático do SvelteKit
+      - ./frontend/build:/srv/frontend:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
