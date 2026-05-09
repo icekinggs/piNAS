@@ -30,7 +30,8 @@ RUN apk add --no-cache \
         sqlite-libs \
         tzdata \
         wget \
-        && addgroup -S pinas && adduser -S -G pinas pinas
+        && addgroup -g 1000 -S pinas \
+        && adduser -u 1000 -S -G pinas pinas
 
 # Diretórios persistentes (montados como volumes).
 RUN mkdir -p /var/lib/pinas/db \
