@@ -66,10 +66,10 @@ func NewRouter(d Deps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(d.JWTIssuer))
 
-			// /me
-			r.Route("/auth", func(r chi.Router) {
-				d.AuthHandler.MeRoutes(r)
-			})
+			// /me — registrado direto, NÃO via r.Route("/auth")
+			// porque o chi não permite Mount() duplicado no mesmo path
+			// (já temos r.Route("/auth", ...) acima para login/refresh/logout).
+			r.Get("/auth/me", d.AuthHandler.MeHandler)
 
 			// /files — escopado por usuário (admin vê tudo, usuário vê home).
 			r.Route("/files", func(r chi.Router) {
