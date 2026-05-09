@@ -15,8 +15,10 @@
 	}
 }
 
-# Bloco principal — pinas.local (mDNS) ou IP do Pi.
-{$PINAS_HOST}, {$PINAS_HOST}:443 {
+# Bloco principal — aceita QUALQUER hostname ou IP.
+# Usar `:443` (sem hostname) faz o Caddy escutar em todos os nomes.
+# O TLS interno gera certs sob demanda usando o hostname requisitado.
+:443 {
 	tls internal
 
 	encode zstd gzip
@@ -39,8 +41,9 @@
 	}
 	reverse_proxy @ws pinas-api:8080
 
-	# API REST.
-	handle_path /api/* {
+	# API REST. Usa `handle` (não `handle_path`) para PRESERVAR o /api/* no path,
+	# porque o backend Go registra rotas com o prefixo completo /api/v1/...
+	handle /api/* {
 		reverse_proxy pinas-api:8080 {
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
@@ -68,7 +71,7 @@
 	}
 }
 
-# Redirect HTTP -> HTTPS (Caddy faz isso automaticamente, mas explícito é melhor).
-http://{$PINAS_HOST} {
+# Redirect HTTP -> HTTPS (mantém o host original).
+:80 {
 	redir https://{host}{uri} permanent
 }
