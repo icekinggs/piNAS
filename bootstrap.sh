@@ -35,6 +35,8 @@ REPO_BRANCH="${REPO_BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/pinas}"
 USB_DEVICE="${USB_DEVICE:-}"          # ex: /dev/sda1 — vazio = pula automount
 SAMBA_USER="${SAMBA_USER:-}"          # vazio = pula samba
+HTTP_PORT="${HTTP_PORT:-}"            # vazio = auto-detecta (80 ou 8080)
+HTTPS_PORT="${HTTPS_PORT:-}"          # vazio = auto-detecta (443 ou 8443)
 
 # ---------- sanity checks ----------
 info "Verificando ambiente..."
@@ -49,6 +51,39 @@ if [[ "$ARCH" != "arm64" && "$ARCH" != "amd64" ]]; then
 fi
 
 ok "Ambiente OK ($(lsb_release -ds 2>/dev/null || echo desconhecido), $ARCH)"
+
+# ---------- detecção de portas em uso ----------
+# Pi-hole, nginx pessoais ou outros serviços podem já estar usando 80/443.
+# Detecta e usa portas alternativas (8080/8443) se necessário.
+info "Verificando portas disponíveis..."
+
+port_in_use() {
+	ss -tln | awk '{print $4}' | grep -qE ":${1}\$"
+}
+
+if [[ -z "$HTTP_PORT" ]]; then
+	if port_in_use 80; then
+		HTTP_PORT=8080
+		WHO_80=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print $NF}' | head -1)
+		warn "Porta 80 já está em uso por: ${WHO_80:-desconhecido}"
+		warn "Usando HTTP_PORT=8080 para o PiNAS"
+	else
+		HTTP_PORT=80
+	fi
+fi
+
+if [[ -z "$HTTPS_PORT" ]]; then
+	if port_in_use 443; then
+		HTTPS_PORT=8443
+		WHO_443=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:443$/ {print $NF}' | head -1)
+		warn "Porta 443 já está em uso por: ${WHO_443:-desconhecido}"
+		warn "Usando HTTPS_PORT=8443 para o PiNAS"
+	else
+		HTTPS_PORT=443
+	fi
+fi
+
+ok "Portas: HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT"
 
 # ---------- 1. Pacotes do sistema ----------
 info "Atualizando apt e instalando dependências base..."
@@ -109,6 +144,22 @@ fi
 cd "$INSTALL_DIR"
 ok "Código em $INSTALL_DIR ($(git rev-parse --short HEAD))"
 
+# ---------- ajusta portas no docker-compose ----------
+# Se as portas detectadas/escolhidas forem diferentes das padrão, sobrescreve.
+# Usamos um override file pra não sujar o docker-compose.yml versionado.
+COMPOSE_OVERRIDE="$INSTALL_DIR/docker-compose.override.yml"
+cat > "$COMPOSE_OVERRIDE" <<EOF
+# Auto-gerado pelo bootstrap.sh — ajusta portas conforme ambiente.
+# Não comite este arquivo. Edite via variáveis HTTP_PORT/HTTPS_PORT.
+services:
+  caddy:
+    ports:
+      - "${HTTP_PORT}:80"
+      - "${HTTPS_PORT}:443"
+      - "${HTTPS_PORT}:443/udp"
+EOF
+ok "docker-compose.override.yml gerado (portas $HTTP_PORT/$HTTPS_PORT)"
+
 # ---------- 5. .env ----------
 if [[ ! -f "$INSTALL_DIR/.env" ]]; then
 	info "Criando .env (gerando senha de admin aleatória)..."
@@ -161,14 +212,23 @@ ufw --force reset >/dev/null
 ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
 ufw allow 22/tcp comment 'ssh/sftp' >/dev/null
-ufw allow 80/tcp comment 'http (redirect)' >/dev/null
-ufw allow 443/tcp comment 'pinas web' >/dev/null
-ufw allow 443/udp comment 'http3' >/dev/null
+ufw allow ${HTTP_PORT}/tcp comment 'pinas http' >/dev/null
+ufw allow ${HTTPS_PORT}/tcp comment 'pinas https' >/dev/null
+ufw allow ${HTTPS_PORT}/udp comment 'pinas http3' >/dev/null
+# Se PiNAS estiver em portas alternativas, libera 80/443 também (Pi-hole etc).
+if [[ "$HTTP_PORT" != "80" ]]; then
+	ufw allow 80/tcp comment 'outro serviço (pihole?)' >/dev/null
+fi
+if [[ "$HTTPS_PORT" != "443" ]]; then
+	ufw allow 443/tcp comment 'outro serviço (pihole?)' >/dev/null
+fi
 ufw allow 137,138/udp comment 'samba netbios' >/dev/null
 ufw allow 139,445/tcp comment 'samba' >/dev/null
 ufw allow 5353/udp comment 'mdns' >/dev/null
+ufw allow 53/tcp comment 'dns (pihole se houver)' >/dev/null
+ufw allow 53/udp comment 'dns (pihole se houver)' >/dev/null
 ufw --force enable >/dev/null
-ok "UFW ativo"
+ok "UFW ativo (portas $HTTP_PORT/$HTTPS_PORT abertas)"
 
 # ---------- 8. Avahi/mDNS ----------
 systemctl enable --now avahi-daemon
@@ -256,8 +316,13 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║                  PiNAS instalado com sucesso!                 ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo
-echo -e "  ${BLUE}Acesso web:${NC}       https://$HOSTNAME_LOCAL"
-echo -e "                     https://$IP_LOCAL"
+URL_SUFFIX=""
+if [[ "$HTTPS_PORT" != "443" ]]; then
+	URL_SUFFIX=":$HTTPS_PORT"
+fi
+
+echo -e "  ${BLUE}Acesso web:${NC}       https://${HOSTNAME_LOCAL}${URL_SUFFIX}"
+echo -e "                     https://${IP_LOCAL}${URL_SUFFIX}"
 echo
 echo -e "  ${BLUE}Login admin:${NC}      admin"
 echo -e "  ${BLUE}Senha:${NC}            $ADMIN_PASS"
