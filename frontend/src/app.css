@@ -1,0 +1,269 @@
+/* PiNAS — design system
+ *
+ * Direção estética: brutalista-utilitário com toques de "console de servidor".
+ * Tipografia: JetBrains Mono (display + dados) + Inter Tight (corpo).
+ * Paleta: dark profunda, accent verde-fósforo (#7cf25b) referência ao terminal.
+ * Bordas duras, cantos pequenos (4px), zero gradiente bobo, micro-divisores hairline.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter+Tight:wght@400;500;600;700&display=swap');
+
+:root {
+	/* superfícies — escala de cinza neutra com leve tinta azul */
+	--bg-0: #07090b;
+	--bg-1: #0a0d10;
+	--bg-2: #0f1318;
+	--bg-3: #151a20;
+	--bg-4: #1c2229;
+
+	/* hairlines */
+	--line-1: #1a2128;
+	--line-2: #232b34;
+	--line-3: #303a45;
+
+	/* texto */
+	--fg-0: #f4f7fa;       /* primary */
+	--fg-1: #c8d0d9;       /* secondary */
+	--fg-2: #8993a0;       /* tertiary */
+	--fg-3: #5a6573;       /* quaternary / disabled */
+	--fg-mono: #b8c4d1;    /* mono labels */
+
+	/* accent */
+	--accent: #7cf25b;
+	--accent-soft: #4a9d39;
+	--accent-bg: #142013;
+	--accent-line: #2d4a26;
+
+	/* status */
+	--ok: #7cf25b;
+	--warn: #f2c14e;
+	--err: #f25b4a;
+	--info: #5bbef2;
+
+	/* tipografia */
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--font-sans: 'Inter Tight', system-ui, -apple-system, sans-serif;
+
+	/* layout */
+	--radius-sm: 2px;
+	--radius:    4px;
+	--radius-lg: 8px;
+	--shadow:    0 1px 0 rgba(0, 0, 0, 0.4);
+
+	/* spacing */
+	--sp-1: 4px;
+	--sp-2: 8px;
+	--sp-3: 12px;
+	--sp-4: 16px;
+	--sp-5: 24px;
+	--sp-6: 32px;
+	--sp-7: 48px;
+
+	/* sidebar */
+	--sidebar-w: 220px;
+	--topbar-h: 48px;
+}
+
+*, *::before, *::after {
+	box-sizing: border-box;
+}
+
+html, body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	background: var(--bg-0);
+	color: var(--fg-0);
+	font-family: var(--font-sans);
+	font-size: 14px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+body {
+	/* Grão sutil — textura de "monitor" */
+	background-image:
+		radial-gradient(circle at 0 0, rgba(124, 242, 91, 0.03), transparent 50%),
+		radial-gradient(circle at 100% 100%, rgba(91, 190, 242, 0.02), transparent 50%);
+	background-attachment: fixed;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+	transition: color 120ms ease;
+}
+a:hover { color: #a8ff8c; }
+
+button {
+	font-family: inherit;
+	font-size: inherit;
+	cursor: pointer;
+	background: none;
+	border: 0;
+	color: inherit;
+}
+
+input, select, textarea {
+	font-family: inherit;
+	font-size: inherit;
+	color: inherit;
+}
+
+::selection {
+	background: var(--accent);
+	color: var(--bg-0);
+}
+
+/* ------------- componentes utilitários ------------- */
+
+.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
+.muted { color: var(--fg-2); }
+.dim { color: var(--fg-3); }
+.uppercase-tag {
+	text-transform: uppercase;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	color: var(--fg-2);
+	font-family: var(--font-mono);
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--sp-2);
+	padding: 8px 14px;
+	background: var(--bg-3);
+	color: var(--fg-0);
+	border: 1px solid var(--line-2);
+	border-radius: var(--radius);
+	font-size: 13px;
+	font-weight: 500;
+	transition: all 120ms ease;
+	white-space: nowrap;
+}
+.btn:hover {
+	background: var(--bg-4);
+	border-color: var(--line-3);
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary {
+	background: var(--accent);
+	color: var(--bg-0);
+	border-color: var(--accent);
+	font-weight: 600;
+}
+.btn-primary:hover {
+	background: #a8ff8c;
+	border-color: #a8ff8c;
+}
+
+.btn-ghost {
+	background: transparent;
+	border-color: transparent;
+}
+.btn-ghost:hover {
+	background: var(--bg-3);
+	border-color: var(--line-2);
+}
+
+.btn-danger {
+	background: var(--bg-3);
+	border-color: rgba(242, 91, 74, 0.4);
+	color: var(--err);
+}
+.btn-danger:hover {
+	background: rgba(242, 91, 74, 0.1);
+	border-color: var(--err);
+}
+
+.input {
+	display: block;
+	width: 100%;
+	padding: 9px 12px;
+	background: var(--bg-1);
+	color: var(--fg-0);
+	border: 1px solid var(--line-2);
+	border-radius: var(--radius);
+	font-family: var(--font-mono);
+	font-size: 13px;
+	transition: border-color 120ms ease;
+}
+.input:focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px rgba(124, 242, 91, 0.1);
+}
+.input::placeholder { color: var(--fg-3); }
+
+.card {
+	background: var(--bg-2);
+	border: 1px solid var(--line-1);
+	border-radius: var(--radius);
+}
+
+.card-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: var(--sp-3) var(--sp-4);
+	border-bottom: 1px solid var(--line-1);
+}
+
+.card-title {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	color: var(--fg-1);
+}
+
+.card-body {
+	padding: var(--sp-4);
+}
+
+/* hairline divider */
+.hr { height: 1px; background: var(--line-1); margin: var(--sp-4) 0; }
+
+/* status pill */
+.pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 8px;
+	background: var(--bg-3);
+	border: 1px solid var(--line-2);
+	border-radius: 12px;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--fg-1);
+}
+.pill::before {
+	content: '';
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--fg-3);
+}
+.pill-ok::before    { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.pill-warn::before  { background: var(--warn); }
+.pill-err::before   { background: var(--err); }
+
+/* loading pulse */
+@keyframes pulse {
+	0%, 100% { opacity: 0.4; }
+	50% { opacity: 1; }
+}
+.pulse { animation: pulse 1.4s ease-in-out infinite; }
+
+/* scrollbar dark */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-1); }
+::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 4px; border: 2px solid var(--bg-1); }
+::-webkit-scrollbar-thumb:hover { background: var(--line-3); }

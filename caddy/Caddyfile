@@ -1,0 +1,74 @@
+# PiNAS — Caddyfile
+# TLS local com CA interna do Caddy (sem precisar de Let's Encrypt).
+# HTTP/3 habilitado por padrão no Caddy 2.
+#
+# Em produção em rede local, o navegador vai mostrar aviso de certificado
+# na primeira vez. Importe o root do Caddy (/data/caddy/pki/authorities/local/root.crt)
+# nos dispositivos cliente para remover o aviso.
+
+{
+	# Admin desligado: nada de painel administrativo do Caddy exposto.
+	admin off
+	# Compressão automática.
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+# Bloco principal — pinas.local (mDNS) ou IP do Pi.
+{$PINAS_HOST}, {$PINAS_HOST}:443 {
+	tls internal
+
+	encode zstd gzip
+
+	# Headers de segurança.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# Remove Server header.
+		-Server
+	}
+
+	# WebSocket — necessário antes do reverse_proxy genérico.
+	@ws {
+		header Connection *Upgrade*
+		header Upgrade websocket
+	}
+	reverse_proxy @ws pinas-api:8080
+
+	# API REST.
+	handle_path /api/* {
+		reverse_proxy pinas-api:8080 {
+			header_up Host {host}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			# Uploads grandes.
+			flush_interval -1
+		}
+	}
+
+	# Frontend estático SvelteKit (SPA — fallback para index.html).
+	handle {
+		root * /srv/frontend
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Logs em formato JSON para parsing.
+	log {
+		output file /data/access.log {
+			roll_size 10mb
+			roll_keep 3
+		}
+		format json
+	}
+}
+
+# Redirect HTTP -> HTTPS (Caddy faz isso automaticamente, mas explícito é melhor).
+http://{$PINAS_HOST} {
+	redir https://{host}{uri} permanent
+}
