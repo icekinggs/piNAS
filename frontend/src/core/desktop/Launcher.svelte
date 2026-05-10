@@ -1,11 +1,11 @@
 <script>
+	import { goto } from '$app/navigation';
 	import { appRegistry } from '../../modules/apps/registry.js';
-	import { WindowManager } from '../windows/WindowManager.js';
 	export let open = false;
 	export let onClose = function() {};
 
-	function launch(id) {
-		WindowManager.open(id);
+	function launch(route) {
+		goto(route);
 		onClose();
 	}
 </script>
@@ -18,7 +18,7 @@
 		</div>
 		<div class="grid">
 			{#each appRegistry as app}
-				<button class="app" on:click={() => launch(app.id)}>
+				<button class="app" on:click={() => launch(app.route)}>
 					<span>{app.icon}</span>
 					<small>{app.title}</small>
 				</button>
