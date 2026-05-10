@@ -8,11 +8,13 @@ RUN apk add --no-cache gcc musl-dev sqlite-dev
 
 WORKDIR /src
 
-COPY go.mod go.sum ./
-RUN go mod download
-
+# Copia TUDO primeiro. Sem isso, `go mod tidy` não vê os imports do código
+# e gera um go.sum incompleto/vazio, fazendo o build seguinte falhar.
 COPY . .
 
+# Resolve dependências. go mod tidy lê o código, baixa o que falta e
+# (re)gera o go.sum. Funciona tanto na 1ª vez (sem go.sum) quanto em rebuilds.
+RUN go mod tidy
 
 # Build estático com CGO. -trimpath remove paths absolutos do binário (reproducibility).
 # -s -w removem símbolos de debug para reduzir tamanho.

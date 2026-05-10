@@ -6,6 +6,8 @@
  * Bordas duras, cantos pequenos (4px), zero gradiente bobo, micro-divisores hairline.
  */
 
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter+Tight:wght@400;500;600;700&display=swap');
+
 :root {
 	/* superfícies — escala de cinza neutra com leve tinta azul */
 	--bg-0: #07090b;
@@ -39,8 +41,8 @@
 	--info: #5bbef2;
 
 	/* tipografia */
-	--font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-	--font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--font-sans: 'Inter Tight', system-ui, -apple-system, sans-serif;
 
 	/* layout */
 	--radius-sm: 2px;

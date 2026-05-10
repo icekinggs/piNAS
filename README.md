@@ -75,10 +75,10 @@ Cria pasta de dados em `/srv/pinas/data/`, gerenciada exclusivamente pelo PiNAS.
 
 ### B. Integrar com Samba existente / pasta atual
 
-Se você já tem Samba compartilhando uma pasta (ex: `/home/iceking`) e quer o painel mostrando os mesmos arquivos:
+Se você já tem Samba compartilhando uma pasta (ex: `/home/gustavo`) e quer o painel mostrando os mesmos arquivos:
 
 ```bash
-sudo DATA_DIR=/home/iceking ./bootstrap.sh
+sudo DATA_DIR=/home/gustavo ./bootstrap.sh
 ```
 
 O painel web e o Samba vão enxergar os mesmos arquivos. Mexer num lado reflete no outro.
@@ -115,7 +115,6 @@ sudo USB_DEVICE=/dev/sda1 SAMBA_USER=admin DATA_DIR=/srv/pinas/data ./bootstrap.
 | `HTTP_PORT` | _auto_ | Forçar porta HTTP (caso queira override) |
 | `HTTPS_PORT` | _auto_ | Forçar porta HTTPS |
 | `INSTALL_DIR` | `/opt/pinas` | Onde instalar o código |
-| `PINAS_FORCE_UPDATE` | `0` | Use `1` para atualizar sobrescrevendo alterações locais no `INSTALL_DIR` |
 
 ---
 
@@ -163,7 +162,7 @@ Esses são os **problemas reais** que aparecem em primeiras instalações e como
 
 ### Build do Go falhando por `go.sum` ausente
 **Causa:** Repo novo sem `go.sum` versionado, build não baixava deps.
-**Como resolvido:** `go.sum` é versionado e o Dockerfile usa `go mod download`.
+**Como resolvido:** Dockerfile copia código antes do `go mod tidy`.
 
 ---
 

@@ -25,14 +25,14 @@ var (
 )
 
 type Session struct {
-	ID               string         `db:"id"`
-	UserID           int64          `db:"user_id"`
-	RefreshTokenHash string         `db:"refresh_token_hash"`
+	ID               string `db:"id"`
+	UserID           int64  `db:"user_id"`
+	RefreshTokenHash string `db:"refresh_token_hash"`
 	UserAgent        sql.NullString `db:"user_agent"`
 	IP               sql.NullString `db:"ip"`
-	CreatedAt        int64          `db:"created_at"`
-	ExpiresAt        int64          `db:"expires_at"`
-	Revoked          int            `db:"revoked"`
+	CreatedAt        int64  `db:"created_at"`
+	ExpiresAt        int64  `db:"expires_at"`
+	Revoked          int    `db:"revoked"`
 }
 
 type SessionRepository interface {
@@ -94,9 +94,9 @@ type LoginResult struct {
 }
 
 type Service struct {
-	users      users.Repository
-	sessions   SessionRepository
-	jwt        *pjwt.Issuer
+	users     users.Repository
+	sessions  SessionRepository
+	jwt       *pjwt.Issuer
 	refreshTTL time.Duration
 }
 
@@ -161,33 +161,6 @@ func (s *Service) Logout(ctx context.Context, refreshToken string) error {
 		return nil // idempotente
 	}
 	return s.sessions.Revoke(ctx, sess.ID)
-}
-
-// ChangePassword troca a senha do proprio usuario apos validar a senha atual.
-// Todas as sessoes de refresh sao revogadas para exigir novo login.
-func (s *Service) ChangePassword(ctx context.Context, userID int64, currentPassword, newPassword string) error {
-	if len(newPassword) < 8 {
-		return users.ErrInvalidPassword
-	}
-	u, err := s.users.GetByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if u.Disabled {
-		return ErrUserDisabled
-	}
-	ok, err := argon2id.Verify(currentPassword, u.PasswordHash)
-	if err != nil || !ok {
-		return ErrInvalidCredentials
-	}
-	hash, err := argon2id.Hash(newPassword)
-	if err != nil {
-		return err
-	}
-	if err := s.users.UpdatePassword(ctx, userID, hash); err != nil {
-		return err
-	}
-	return s.sessions.RevokeAllForUser(ctx, userID)
 }
 
 func (s *Service) issueTokens(ctx context.Context, u *users.User, ip, ua string) (*LoginResult, *users.User, error) {

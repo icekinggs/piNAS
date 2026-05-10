@@ -72,7 +72,6 @@ func NewRouter(d Deps) http.Handler {
 			// porque o chi não permite Mount() duplicado no mesmo path
 			// (já temos r.Route("/auth", ...) acima para login/refresh/logout).
 			r.Get("/auth/me", d.AuthHandler.MeHandler)
-			r.Post("/auth/password", d.AuthHandler.PasswordHandler)
 
 			// /files — escopado por usuário (admin vê tudo, usuário vê home).
 			r.Route("/files", func(r chi.Router) {

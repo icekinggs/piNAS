@@ -82,16 +82,11 @@ func JWTAuth(issuer *pjwt.Issuer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
-			tok := ""
-			if strings.HasPrefix(h, "Bearer ") {
-				tok = strings.TrimPrefix(h, "Bearer ")
-			} else {
-				tok = websocketProtocolToken(r.Header.Get("Sec-WebSocket-Protocol"))
-			}
-			if tok == "" {
+			if !strings.HasPrefix(h, "Bearer ") {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing token"})
 				return
 			}
+			tok := strings.TrimPrefix(h, "Bearer ")
 			claims, err := issuer.Parse(tok)
 			if err != nil {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
@@ -101,16 +96,6 @@ func JWTAuth(issuer *pjwt.Issuer) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
-}
-
-func websocketProtocolToken(header string) string {
-	for _, p := range strings.Split(header, ",") {
-		p = strings.TrimSpace(p)
-		if strings.HasPrefix(p, "pinas.jwt.") {
-			return strings.TrimPrefix(p, "pinas.jwt.")
-		}
-	}
-	return ""
 }
 
 // RequireAdmin exige role=admin (deve vir após JWTAuth).

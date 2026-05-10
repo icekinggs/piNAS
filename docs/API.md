@@ -53,14 +53,6 @@ Revoga a sessão referenciada pelo cookie. Limpa o cookie. Resposta `{ "ok": tru
 { "id": 1, "username": "admin", "role": "admin", "home_path": "/users/admin" }
 ```
 
-### POST /auth/password
-Requer access token. Troca a senha do usuario autenticado e revoga sessoes de refresh.
-
-```json
-Request: { "current_password": "...", "new_password": "min8chars" }
-Response: { "ok": true, "reauth_required": true }
-```
-
 ---
 
 ## Users (admin)
@@ -77,7 +69,7 @@ Response: 201 Created — view do user.
 ```
 
 ### GET /users/{id}    →  view
-### PATCH /users/{id}  →  body: `{ "disabled": true, "role": "user", "quota_bytes": 0 }`
+### PATCH /users/{id}  →  body: `{ "disabled": true }` (futuramente role, quota)
 ### DELETE /users/{id} →  `{ "deleted": true }`. Não permite auto-delete.
 ### POST /users/{id}/password →  body: `{ "new_password": "..." }`
 
@@ -168,10 +160,7 @@ Mesmo body do `move`.
 
 ## WebSocket
 
-`GET /api/v1/ws` (upgrade). Requer access token.
-
-Clientes HTTP podem usar `Authorization: Bearer <access_token>`.
-Clientes WebSocket em browser podem usar o subprotocol `pinas.jwt.<access_token>`.
+`GET /ws` (upgrade). Requer `Authorization` header.
 
 Mensagens recebidas:
 ```json

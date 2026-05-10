@@ -1,7 +1,6 @@
 <script>
 	import { auth } from '$lib/stores/auth.js';
 	import { api } from '$lib/api/client.js';
-	import { goto } from '$app/navigation';
 
 	let oldPass = '';
 	let newPass = '';
@@ -12,19 +11,16 @@
 
 	async function changePassword() {
 		err = ''; msg = '';
-		if (!oldPass) { err = 'informe a senha atual'; return; }
 		if (newPass.length < 8) { err = 'senha mínima de 8 caracteres'; return; }
 		if (newPass !== confirmPass) { err = 'senhas não conferem'; return; }
 		busy = true;
 		try {
-			await api('/auth/password', {
+			await api(`/users/${$auth.user.id}/password`, {
 				method: 'POST',
-				body: { current_password: oldPass, new_password: newPass }
+				body: { new_password: newPass }
 			});
-			msg = 'senha atualizada; entre novamente';
+			msg = 'senha atualizada';
 			oldPass = newPass = confirmPass = '';
-			auth.clear();
-			goto('/login');
 		} catch (e) { err = e.message; }
 		finally { busy = false; }
 	}
@@ -54,16 +50,12 @@
 	</div>
 	<form class="card-body form" on:submit|preventDefault={changePassword}>
 		<div class="field">
-			<label class="lbl uppercase-tag" for="op">senha atual</label>
-			<input id="op" class="input" type="password" required autocomplete="current-password" bind:value={oldPass} />
-		</div>
-		<div class="field">
 			<label class="lbl uppercase-tag" for="np">nova senha</label>
-			<input id="np" class="input" type="password" required minlength="8" autocomplete="new-password" bind:value={newPass} />
+			<input id="np" class="input" type="password" required minlength="8" bind:value={newPass} />
 		</div>
 		<div class="field">
 			<label class="lbl uppercase-tag" for="cp">confirmar</label>
-			<input id="cp" class="input" type="password" required minlength="8" autocomplete="new-password" bind:value={confirmPass} />
+			<input id="cp" class="input" type="password" required minlength="8" bind:value={confirmPass} />
 		</div>
 		{#if err}<div class="error mono">{err}</div>{/if}
 		{#if msg}<div class="ok mono">{msg}</div>{/if}

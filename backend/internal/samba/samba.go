@@ -1,7 +1,7 @@
 // Package samba — gerenciamento declarativo de compartilhamentos Samba.
 //
 // O backend NÃO modifica /etc/samba/smb.conf direto. Em vez disso, mantém
-// um arquivo de "estado desejado" em /var/lib/pinas/samba/desired-state.json
+// um arquivo de "estado desejado" em /var/lib/pinas/samba/desired-state.yml
 // que descreve quais shares e usuários devem existir. Um script no host
 // (samba-sync.sh) observa esse arquivo via inotify (systemd .path unit) e
 // aplica as mudanças no Samba real.
@@ -19,7 +19,7 @@ import (
 	"strings"
 )
 
-// State é o estado desejado do Samba, serializado em JSON e lido pelo host.
+// State é o estado desejado do Samba — serializado pra YAML e lido pelo host.
 type State struct {
 	Version int     `json:"version" yaml:"version"`
 	Shares  []Share `json:"shares"  yaml:"shares"`
@@ -75,13 +75,13 @@ type User struct {
 }
 
 var (
-	ErrShareNotFound = errors.New("samba: share não encontrado")
-	ErrShareExists   = errors.New("samba: share com esse nome já existe")
-	ErrUserNotFound  = errors.New("samba: usuário não encontrado")
-	ErrUserExists    = errors.New("samba: usuário com esse nome já existe")
-	ErrInvalidName   = errors.New("samba: nome inválido (letras, números, _ ou -; 1-32 chars)")
-	ErrInvalidPath   = errors.New("samba: path inválido (absoluto, sem .. ou caracteres especiais)")
-	ErrReservedName  = errors.New("samba: nome reservado (global, homes, printers, etc)")
+	ErrShareNotFound  = errors.New("samba: share não encontrado")
+	ErrShareExists    = errors.New("samba: share com esse nome já existe")
+	ErrUserNotFound   = errors.New("samba: usuário não encontrado")
+	ErrUserExists     = errors.New("samba: usuário com esse nome já existe")
+	ErrInvalidName    = errors.New("samba: nome inválido (letras, números, _ ou -; 1-32 chars)")
+	ErrInvalidPath    = errors.New("samba: path inválido (absoluto, sem .. ou caracteres especiais)")
+	ErrReservedName   = errors.New("samba: nome reservado (global, homes, printers, etc)")
 )
 
 var (
@@ -134,7 +134,7 @@ func ValidateSharePath(p string) error {
 }
 
 // Service implementa as operações do módulo. Stateful em memória; cada
-// mudança regrava o desired-state.json via Store.
+// mudança regrava o desired-state.yml via Store.
 type Service struct {
 	store *Store
 }

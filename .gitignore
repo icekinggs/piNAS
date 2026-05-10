@@ -1,29 +1,31 @@
+# env
 .env
-.env.*
-!.env.example
+.env.local
+.env.*.local
+
+# docker-compose override (gerado por bootstrap, específico do host)
 docker-compose.override.yml
+docker-compose.override.yaml
+docker-compose.yml.bak
 
-# OS/editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-
-# Backend
+# build
 backend/.dev/
-backend/pinas
-backend/*.db
-backend/*.db-*
-backend/coverage.out
-
-# Frontend
-frontend/node_modules/
 frontend/build/
 frontend/.svelte-kit/
+frontend/node_modules/
+frontend/package-lock.json
 frontend/.vite/
-frontend/npm-debug.log*
 
-# Runtime data
-*.log
-*.tmp
+# go
+backend/pinas
+backend/*.test
+backend/*.out
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp

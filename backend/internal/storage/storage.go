@@ -19,11 +19,11 @@ import (
 )
 
 var (
-	ErrEscape   = errors.New("storage: path tenta sair do jail")
-	ErrNotFound = errors.New("storage: caminho não encontrado")
-	ErrNotDir   = errors.New("storage: não é diretório")
-	ErrIsDir    = errors.New("storage: é diretório")
-	ErrConflict = errors.New("storage: destino já existe")
+	ErrEscape    = errors.New("storage: path tenta sair do jail")
+	ErrNotFound  = errors.New("storage: caminho não encontrado")
+	ErrNotDir    = errors.New("storage: não é diretório")
+	ErrIsDir     = errors.New("storage: é diretório")
+	ErrConflict  = errors.New("storage: destino já existe")
 )
 
 type Jail struct {
@@ -38,11 +38,7 @@ func NewJail(root string) (*Jail, error) {
 	if err := os.MkdirAll(abs, 0o750); err != nil {
 		return nil, err
 	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return nil, err
-	}
-	return &Jail{root: real}, nil
+	return &Jail{root: abs}, nil
 }
 
 // Root devolve o diretório raiz absoluto.
@@ -74,84 +70,6 @@ func (j *Jail) Resolve(virtualPath string) (string, error) {
 }
 
 // Virtualize devolve o virtualPath relativo ao jail (sempre começa com /).
-func (j *Jail) ensureInside(abs string) error {
-	rel, err := filepath.Rel(j.root, abs)
-	if err != nil {
-		return err
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return ErrEscape
-	}
-	return nil
-}
-
-func (j *Jail) resolveExisting(virtualPath string) (string, error) {
-	abs, err := j.Resolve(virtualPath)
-	if err != nil {
-		return "", err
-	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", ErrNotFound
-		}
-		return "", err
-	}
-	if err := j.ensureInside(real); err != nil {
-		return "", err
-	}
-	return real, nil
-}
-
-func (j *Jail) validateExistingInside(virtualPath string) (string, error) {
-	abs, err := j.Resolve(virtualPath)
-	if err != nil {
-		return "", err
-	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", ErrNotFound
-		}
-		return "", err
-	}
-	if err := j.ensureInside(real); err != nil {
-		return "", err
-	}
-	return abs, nil
-}
-
-func (j *Jail) resolveCreateParent(virtualPath string) (string, error) {
-	abs, err := j.Resolve(virtualPath)
-	if err != nil {
-		return "", err
-	}
-	if err := j.ensureNearestExistingInside(abs); err != nil {
-		return "", err
-	}
-	return abs, nil
-}
-
-func (j *Jail) ensureNearestExistingInside(abs string) error {
-	cur := abs
-	for {
-		if _, err := os.Lstat(cur); err == nil {
-			real, err := filepath.EvalSymlinks(cur)
-			if err != nil {
-				return err
-			}
-			return j.ensureInside(real)
-		} else if !os.IsNotExist(err) {
-			return err
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			return ErrEscape
-		}
-		cur = parent
-	}
-}
-
 func (j *Jail) Virtualize(absPath string) (string, error) {
 	rel, err := filepath.Rel(j.root, absPath)
 	if err != nil {
@@ -174,7 +92,7 @@ type Entry struct {
 }
 
 func (j *Jail) List(virtualDir string) ([]Entry, error) {
-	abs, err := j.resolveExisting(virtualDir)
+	abs, err := j.Resolve(virtualDir)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +132,7 @@ func (j *Jail) List(virtualDir string) ([]Entry, error) {
 
 // Stat devolve metadata de um path.
 func (j *Jail) Stat(virtualPath string) (Entry, error) {
-	abs, err := j.resolveExisting(virtualPath)
+	abs, err := j.Resolve(virtualPath)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -238,7 +156,7 @@ func (j *Jail) Stat(virtualPath string) (Entry, error) {
 
 // MkdirAll cria diretório (e intermediários) com permissão 0o750.
 func (j *Jail) MkdirAll(virtualPath string) error {
-	abs, err := j.resolveCreateParent(virtualPath)
+	abs, err := j.Resolve(virtualPath)
 	if err != nil {
 		return err
 	}
@@ -247,7 +165,7 @@ func (j *Jail) MkdirAll(virtualPath string) error {
 
 // Open abre um arquivo para leitura.
 func (j *Jail) Open(virtualPath string) (*os.File, error) {
-	abs, err := j.resolveExisting(virtualPath)
+	abs, err := j.Resolve(virtualPath)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +190,7 @@ type AtomicWriter struct {
 }
 
 func (j *Jail) CreateAtomic(virtualPath string) (*AtomicWriter, error) {
-	abs, err := j.resolveCreateParent(virtualPath)
+	abs, err := j.Resolve(virtualPath)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +239,7 @@ func (a *AtomicWriter) Abort() {
 
 // Remove apaga arquivo ou diretório (recursivo se diretório).
 func (j *Jail) Remove(virtualPath string) error {
-	abs, err := j.validateExistingInside(virtualPath)
+	abs, err := j.Resolve(virtualPath)
 	if err != nil {
 		return err
 	}
@@ -337,11 +255,11 @@ func (j *Jail) Remove(virtualPath string) error {
 
 // Rename renomeia/move dentro do jail.
 func (j *Jail) Rename(srcVirtual, dstVirtual string) error {
-	src, err := j.validateExistingInside(srcVirtual)
+	src, err := j.Resolve(srcVirtual)
 	if err != nil {
 		return err
 	}
-	dst, err := j.resolveCreateParent(dstVirtual)
+	dst, err := j.Resolve(dstVirtual)
 	if err != nil {
 		return err
 	}
@@ -356,11 +274,11 @@ func (j *Jail) Rename(srcVirtual, dstVirtual string) error {
 
 // Copy faz cópia de arquivo (simples, sem progresso).
 func (j *Jail) Copy(srcVirtual, dstVirtual string) error {
-	src, err := j.resolveExisting(srcVirtual)
+	src, err := j.Resolve(srcVirtual)
 	if err != nil {
 		return err
 	}
-	dst, err := j.resolveCreateParent(dstVirtual)
+	dst, err := j.Resolve(dstVirtual)
 	if err != nil {
 		return err
 	}

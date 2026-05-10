@@ -1,67 +1,80 @@
 # PiNAS — Caddyfile
-# TLS local com CA interna do Caddy (sem precisar de Let's Encrypt).
-# HTTP/3 habilitado por padrão no Caddy 2.
 #
-# Em produção em rede local, o navegador vai mostrar aviso de certificado
-# na primeira vez. Importe o root do Caddy (/data/caddy/pki/authorities/local/root.crt)
-# nos dispositivos cliente para remover o aviso.
+# TLS local com CA interna do Caddy. Sem dependência de Let's Encrypt
+# (não precisa de domínio público nem porta 80 acessível pra fora).
+#
+# Estratégia: `tls internal { on_demand }` gera certificado sob demanda
+# pra QUALQUER hostname/IP que chegar. Isso permite acesso por:
+#   - https://pinas.local         (mDNS)
+#   - https://192.168.x.y         (IP local)
+#   - https://meu-pi              (hostname do sistema)
+#   - https://localhost           (no próprio Pi)
+#
+# Na 1ª vez o navegador mostra aviso "certificado não confiável" —
+# é esperado em CA local. Pra remover o aviso, instale o root CA
+# nos clientes (instruções em docs/DEPLOY.md).
 
 {
-	# Admin desligado: nada de painel administrativo do Caddy exposto.
+	# Admin desligado por segurança (nada de painel admin do Caddy exposto).
 	admin off
-	# Compressão automática.
+
+	# HTTP/1, HTTP/2 e HTTP/3 (QUIC).
 	servers {
 		protocols h1 h2 h3
 	}
+
+	# Desabilita auto-redirects do Caddy (faríamos o nosso redirect manual no :80).
+	# Força uso da CA local em vez de tentar Let's Encrypt.
+	auto_https disable_redirects
+	local_certs
 }
 
-# Bloco principal — aceita QUALQUER hostname ou IP.
-# Usar `:443` (sem hostname) faz o Caddy escutar em todos os nomes.
-# O TLS interno gera certs sob demanda usando o hostname requisitado.
-:443 {
-	tls internal
+# Bloco principal — aceita qualquer hostname/IP.
+# `https://` (sem nome) é a forma de aceitar tudo no Caddy 2.
+https:// {
+	tls internal {
+		on_demand
+	}
 
 	encode zstd gzip
 
-	# Headers de segurança.
+	# Headers de segurança aplicados a TODAS as respostas.
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "geolocation=(), microphone=(), camera=()"
-		# Remove Server header.
 		-Server
 	}
 
-	# WebSocket — necessário antes do reverse_proxy genérico.
+	# WebSocket — precisa vir antes do reverse_proxy genérico.
 	@ws {
 		header Connection *Upgrade*
 		header Upgrade websocket
 	}
 	reverse_proxy @ws pinas-api:8080
 
-	# API REST. Usa `handle` (não `handle_path`) para PRESERVAR o /api/* no path,
-	# porque o backend Go registra rotas com o prefixo completo /api/v1/...
+	# API REST.
+	# Usa `handle` (não `handle_path`) pra PRESERVAR o prefixo /api/* no path,
+	# porque o backend Go registra rotas como /api/v1/... (com prefixo completo).
 	handle /api/* {
 		reverse_proxy pinas-api:8080 {
 			header_up Host {host}
 			header_up X-Real-IP {remote_host}
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Forwarded-Proto {scheme}
-			# Uploads grandes.
+			# Sem flush_interval pode "engasgar" uploads grandes em streaming.
 			flush_interval -1
 		}
 	}
 
-	# Frontend estático SvelteKit (SPA — fallback para index.html).
+	# Frontend estático SvelteKit (SPA com fallback pra index.html).
 	handle {
 		root * /srv/frontend
 		try_files {path} /index.html
 		file_server
 	}
 
-	# Logs em formato JSON para parsing.
+	# Logs em JSON pra parsing fácil.
 	log {
 		output file /data/access.log {
 			roll_size 10mb
@@ -71,7 +84,7 @@
 	}
 }
 
-# Redirect HTTP -> HTTPS (mantém o host original).
-:80 {
+# Redirect HTTP → HTTPS (mantém host e path originais).
+http:// {
 	redir https://{host}{uri} permanent
 }

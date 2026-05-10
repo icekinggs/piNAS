@@ -122,31 +122,15 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "json inválido")
 		return
 	}
-	claims, _ := middleware.FromContext(r.Context())
-	if claims != nil && claims.UserID == id {
-		if body.Disabled != nil && *body.Disabled {
-			writeError(w, http.StatusBadRequest, "nao pode desativar a propria conta")
-			return
-		}
-		if body.Role != nil && *body.Role != RoleAdmin {
-			writeError(w, http.StatusBadRequest, "nao pode rebaixar a propria conta")
+	if body.Disabled != nil {
+		if err := h.svc.SetDisabled(r.Context(), id, *body.Disabled); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	}
-	u, err := h.svc.Update(r.Context(), id, UpdateInput{
-		Disabled: body.Disabled,
-		Role:     body.Role,
-		Quota:    body.Quota,
-	})
+	u, err := h.svc.Get(r.Context(), id)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrNotFound):
-			writeError(w, http.StatusNotFound, err.Error())
-		case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrInvalidQuota), errors.Is(err, ErrLastAdmin):
-			writeError(w, http.StatusBadRequest, err.Error())
-		default:
-			writeError(w, http.StatusInternalServerError, err.Error())
-		}
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, toView(u))
@@ -165,10 +149,6 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		if errors.Is(err, ErrLastAdmin) {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -32,7 +32,7 @@ dev-frontend:
 	cd frontend && npm install && npm run dev
 
 build:
-	cd frontend && npm ci && npm run build
+	cd frontend && npm install && npm run build
 	docker compose build
 
 up:
