@@ -1,0 +1,8 @@
+/* PiNAS Web OS animation presets. Intentionally lightweight for Raspberry Pi. */
+.os-animate-pop {
+	transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.os-animate-fade {
+	transition: opacity 160ms ease;
+}
