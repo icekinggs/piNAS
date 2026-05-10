@@ -1,16 +1,16 @@
 <script>
+	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { appRegistry } from '../../modules/apps/registry.js';
-	import { WindowManager } from '../windows/WindowManager.js';
-	import { windows } from '../windows/WindowStore.js';
 	export let onLauncher = () => {};
-	function isOpen(id) { return $windows.some((w) => w.appId === id); }
+	function isActive(route) { return $page.url.pathname === route || $page.url.pathname.startsWith(route + '/'); }
 </script>
 
 <nav class="dock os-glass" aria-label="Aplicativos fixados">
 	<button class="launcher" on:click={onLauncher} aria-label="Abrir launcher">⌘</button>
 	<div class="sep"></div>
 	{#each appRegistry.slice(0, 6) as app}
-		<button class:running={isOpen(app.id)} title={app.title} on:click={() => WindowManager.open(app.id)}>
+		<button class:running={isActive(app.route)} title={app.title} on:click={() => goto(app.route)}>
 			<span>{app.icon}</span>
 		</button>
 	{/each}
