@@ -75,10 +75,10 @@ Cria pasta de dados em `/srv/pinas/data/`, gerenciada exclusivamente pelo PiNAS.
 
 ### B. Integrar com Samba existente / pasta atual
 
-Se você já tem Samba compartilhando uma pasta (ex: `/home/gustavo`) e quer o painel mostrando os mesmos arquivos:
+Se você já tem Samba compartilhando uma pasta (ex: `/home/iceking`) e quer o painel mostrando os mesmos arquivos:
 
 ```bash
-sudo DATA_DIR=/home/gustavo ./bootstrap.sh
+sudo DATA_DIR=/home/iceking ./bootstrap.sh
 ```
 
 O painel web e o Samba vão enxergar os mesmos arquivos. Mexer num lado reflete no outro.
