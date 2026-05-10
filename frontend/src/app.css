@@ -1,3 +1,6 @@
+@import './styles/tokens.css';
+@import './styles/animations.css';
+@import './styles/utilities.css';
 /* PiNAS — design system
  *
  * Direção estética: brutalista-utilitário com toques de "console de servidor".
@@ -22,11 +25,11 @@
 	--line-3: #303a45;
 
 	/* texto */
-	--fg-0: #f4f7fa;       /* primary */
-	--fg-1: #c8d0d9;       /* secondary */
-	--fg-2: #8993a0;       /* tertiary */
-	--fg-3: #5a6573;       /* quaternary / disabled */
-	--fg-mono: #b8c4d1;    /* mono labels */
+	--fg-0: #f4f7fa;
+	--fg-1: #c8d0d9;
+	--fg-2: #8993a0;
+	--fg-3: #5a6573;
+	--fg-mono: #b8c4d1;
 
 	/* accent */
 	--accent: #7cf25b;
@@ -82,7 +85,6 @@ html, body {
 }
 
 body {
-	/* Grão sutil — textura de "monitor" */
 	background-image:
 		radial-gradient(circle at 0 0, rgba(124, 242, 91, 0.03), transparent 50%),
 		radial-gradient(circle at 100% 100%, rgba(91, 190, 242, 0.02), transparent 50%);
@@ -115,8 +117,6 @@ input, select, textarea {
 	background: var(--accent);
 	color: var(--bg-0);
 }
-
-/* ------------- componentes utilitários ------------- */
 
 .mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
 .muted { color: var(--fg-2); }
@@ -227,10 +227,8 @@ input, select, textarea {
 	padding: var(--sp-4);
 }
 
-/* hairline divider */
 .hr { height: 1px; background: var(--line-1); margin: var(--sp-4) 0; }
 
-/* status pill */
 .pill {
 	display: inline-flex;
 	align-items: center;
@@ -255,14 +253,12 @@ input, select, textarea {
 .pill-warn::before  { background: var(--warn); }
 .pill-err::before   { background: var(--err); }
 
-/* loading pulse */
 @keyframes pulse {
 	0%, 100% { opacity: 0.4; }
 	50% { opacity: 1; }
 }
 .pulse { animation: pulse 1.4s ease-in-out infinite; }
 
-/* scrollbar dark */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: var(--bg-1); }
 ::-webkit-scrollbar-thumb { background: var(--bg-4); border-radius: 4px; border: 2px solid var(--bg-1); }
