@@ -1,7 +1,12 @@
 <script>
+	import { windows } from '../windows/WindowStore.js';
 	import Wallpaper from './Wallpaper.svelte';
 	import Topbar from './Topbar.svelte';
 	import Dock from './Dock.svelte';
+	import Launcher from './Launcher.svelte';
+	import Window from '../windows/Window.svelte';
+
+	let launcherOpen = false;
 </script>
 
 <div class="desktop-shell">
@@ -12,7 +17,12 @@
 		<slot />
 	</div>
 
-	<Dock />
+	{#each $windows as item (item.id)}
+		<Window item={item} />
+	{/each}
+
+	<Launcher open={launcherOpen} onClose={() => launcherOpen = false} />
+	<Dock onLauncher={() => launcherOpen = !launcherOpen} />
 </div>
 
 <style>
