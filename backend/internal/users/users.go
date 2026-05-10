@@ -23,6 +23,9 @@ var (
 	ErrUsernameTaken   = errors.New("users: nome de usuário já existe")
 	ErrInvalidUsername = errors.New("users: username inválido (3-32 chars, letras/números/_)")
 	ErrInvalidPassword = errors.New("users: senha muito curta (min. 8 chars)")
+	ErrInvalidRole     = errors.New("users: role invalida")
+	ErrInvalidQuota    = errors.New("users: quota invalida")
+	ErrLastAdmin       = errors.New("users: nao e possivel remover, desativar ou rebaixar o ultimo admin")
 )
 
 type User struct {
@@ -31,7 +34,7 @@ type User struct {
 	PasswordHash string `db:"password_hash" json:"-"`
 	Role         string `db:"role"          json:"role"`
 	HomePath     string `db:"home_path"     json:"home_path"`
-	QuotaBytes  int64  `db:"quota_bytes"   json:"quota_bytes"`
+	QuotaBytes   int64  `db:"quota_bytes"   json:"quota_bytes"`
 	Disabled     bool   `db:"disabled"      json:"disabled"`
 	CreatedAt    int64  `db:"created_at"    json:"created_at"`
 	UpdatedAt    int64  `db:"updated_at"    json:"updated_at"`
@@ -48,6 +51,7 @@ type Repository interface {
 	UpdatePassword(ctx context.Context, id int64, hash string) error
 	Delete(ctx context.Context, id int64) error
 	Count(ctx context.Context) (int64, error)
+	CountAdmins(ctx context.Context) (int64, error)
 }
 
 type sqliteRepo struct{ db *sqlx.DB }
@@ -135,6 +139,12 @@ func (r *sqliteRepo) Count(ctx context.Context) (int64, error) {
 	return n, err
 }
 
+func (r *sqliteRepo) CountAdmins(ctx context.Context) (int64, error) {
+	var n int64
+	err := r.db.GetContext(ctx, &n, `SELECT COUNT(*) FROM users WHERE role = ? AND disabled = 0`, RoleAdmin)
+	return n, err
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -153,6 +163,12 @@ type CreateInput struct {
 	Password string
 	Role     string
 	Quota    int64
+}
+
+type UpdateInput struct {
+	Role     *string
+	Quota    *int64
+	Disabled *bool
 }
 
 type Service struct {
@@ -210,7 +226,57 @@ func (s *Service) ChangePassword(ctx context.Context, id int64, newPassword stri
 	return s.repo.UpdatePassword(ctx, id, hash)
 }
 
+func (s *Service) Update(ctx context.Context, id int64, in UpdateInput) (*User, error) {
+	u, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	nextRole := u.Role
+	nextDisabled := u.Disabled
+	nextQuota := u.QuotaBytes
+
+	if in.Role != nil {
+		if *in.Role != RoleAdmin && *in.Role != RoleUser {
+			return nil, ErrInvalidRole
+		}
+		nextRole = *in.Role
+	}
+	if in.Disabled != nil {
+		nextDisabled = *in.Disabled
+	}
+	if in.Quota != nil {
+		if *in.Quota < 0 {
+			return nil, ErrInvalidQuota
+		}
+		nextQuota = *in.Quota
+	}
+
+	if u.Role == RoleAdmin && (nextRole != RoleAdmin || nextDisabled) {
+		if err := s.ensureAnotherActiveAdmin(ctx); err != nil {
+			return nil, err
+		}
+	}
+
+	u.Role = nextRole
+	u.Disabled = nextDisabled
+	u.QuotaBytes = nextQuota
+	if err := s.repo.Update(ctx, u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 func (s *Service) Delete(ctx context.Context, id int64) error {
+	u, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if u.Role == RoleAdmin {
+		if err := s.ensureAnotherActiveAdmin(ctx); err != nil {
+			return err
+		}
+	}
 	return s.repo.Delete(ctx, id)
 }
 
@@ -219,8 +285,24 @@ func (s *Service) SetDisabled(ctx context.Context, id int64, disabled bool) erro
 	if err != nil {
 		return err
 	}
+	if disabled && u.Role == RoleAdmin {
+		if err := s.ensureAnotherActiveAdmin(ctx); err != nil {
+			return err
+		}
+	}
 	u.Disabled = disabled
 	return s.repo.Update(ctx, u)
+}
+
+func (s *Service) ensureAnotherActiveAdmin(ctx context.Context) error {
+	n, err := s.repo.CountAdmins(ctx)
+	if err != nil {
+		return err
+	}
+	if n <= 1 {
+		return ErrLastAdmin
+	}
+	return nil
 }
 
 // ValidateUsername restringe a [a-z0-9_], 3-32 chars, começa com letra.

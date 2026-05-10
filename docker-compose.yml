@@ -1,8 +1,8 @@
 # PiNAS — Docker Compose
 #
 # IMPORTANTE: Este arquivo contém os DEFAULTS do projeto.
-# Configurações específicas do seu host (UID:GID, portas, caminhos)
-# são geradas pelo bootstrap.sh em docker-compose.override.yml.
+# Configurações específicas do seu host são geradas pelo bootstrap.sh:
+# UID:GID e caminhos em docker-compose.override.yml; portas em .env.
 # Você não precisa editar este arquivo.
 
 services:
@@ -75,10 +75,10 @@ services:
     restart: unless-stopped
     ports:
       # Portas padrão. O bootstrap detecta conflitos (Pi-hole, nginx, etc)
-      # e gera docker-compose.override.yml com portas alternativas (8080/8443).
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      # e escreve PINAS_HTTP_PORT/PINAS_HTTPS_PORT no .env.
+      - "${PINAS_HTTP_PORT:-80}:80"
+      - "${PINAS_HTTPS_PORT:-443}:443"
+      - "${PINAS_HTTPS_PORT:-443}:443/udp"
     environment:
       PINAS_HOST: ${PINAS_HOST:-pinas.local}
     volumes:

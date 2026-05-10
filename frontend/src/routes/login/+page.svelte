@@ -52,7 +52,7 @@
 
 		<div class="field">
 			<label class="lbl uppercase-tag" for="u">usuário</label>
-			<input id="u" class="input" type="text" autocomplete="username" required bind:value={username} autofocus />
+			<input id="u" class="input" type="text" autocomplete="username" required bind:value={username} />
 		</div>
 
 		<div class="field">

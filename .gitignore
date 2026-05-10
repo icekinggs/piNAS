@@ -1,0 +1,29 @@
+.env
+.env.*
+!.env.example
+docker-compose.override.yml
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Backend
+backend/.dev/
+backend/pinas
+backend/*.db
+backend/*.db-*
+backend/coverage.out
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+frontend/.vite/
+frontend/npm-debug.log*
+
+# Runtime data
+*.log
+*.tmp

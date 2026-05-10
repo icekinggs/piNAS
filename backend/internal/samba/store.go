@@ -17,8 +17,8 @@ const stateFileName = "desired-state.json"
 
 // Store gerencia leitura/escrita atômica do estado em disco.
 type Store struct {
-	dir  string
-	mu   sync.Mutex
+	dir string
+	mu  sync.Mutex
 }
 
 func NewStore(dir string) (*Store, error) {
@@ -96,9 +96,8 @@ func (s *Store) Save(st *State) error {
 		os.Remove(tmpPath)
 		return err
 	}
-	// Permissão 0640 — script no host roda como root e lê.
-	// Hashes/senhas pendentes ficam aqui temporariamente.
-	if err := os.Chmod(tmpPath, 0o640); err != nil {
+	// Arquivo privado (0600): hashes/senhas pendentes ficam aqui temporariamente.
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
 		os.Remove(tmpPath)
 		return err
 	}

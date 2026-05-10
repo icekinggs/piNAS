@@ -66,8 +66,8 @@ export async function api(path, options = {}) {
 
 	let res = await doFetch();
 
-	// Tentativa de refresh em 401, exceto no próprio endpoint de auth.
-	if (res.status === 401 && !path.startsWith('/auth/')) {
+	// Tentativa de refresh em 401, exceto nos endpoints que controlam o refresh.
+	if (res.status === 401 && !['/auth/login', '/auth/refresh', '/auth/logout'].includes(path)) {
 		try {
 			await tryRefresh();
 			res = await doFetch();

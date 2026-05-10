@@ -14,8 +14,8 @@ import (
 )
 
 type Handler struct {
-	svc       *Service
-	users     users.Repository
+	svc          *Service
+	users        users.Repository
 	cookieSecure bool
 }
 
@@ -35,11 +35,21 @@ func (h *Handler) MeHandler(w http.ResponseWriter, r *http.Request) {
 	h.me(w, r)
 }
 
+// PasswordHandler atende POST /auth/password para o usuario autenticado.
+func (h *Handler) PasswordHandler(w http.ResponseWriter, r *http.Request) {
+	h.changePassword(w, r)
+}
+
 const refreshCookieName = "pinas_refresh"
 
 type loginBody struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type changePasswordBody struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
 }
 
 type loginResp struct {
@@ -133,6 +143,38 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toView(u))
+}
+
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.FromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "no auth")
+		return
+	}
+	var body changePasswordBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "json invalido")
+		return
+	}
+	if body.CurrentPassword == "" || body.NewPassword == "" {
+		writeError(w, http.StatusBadRequest, "senha atual e nova senha sao obrigatorias")
+		return
+	}
+	if err := h.svc.ChangePassword(r.Context(), claims.UserID, body.CurrentPassword, body.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidCredentials):
+			writeError(w, http.StatusUnauthorized, "senha atual invalida")
+		case errors.Is(err, ErrUserDisabled):
+			writeError(w, http.StatusForbidden, "usuario desativado")
+		case errors.Is(err, users.ErrInvalidPassword):
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	h.clearRefreshCookie(w)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true, "reauth_required": true})
 }
 
 func (h *Handler) setRefreshCookie(w http.ResponseWriter, token string, exp time.Time) {

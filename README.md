@@ -115,6 +115,7 @@ sudo USB_DEVICE=/dev/sda1 SAMBA_USER=admin DATA_DIR=/srv/pinas/data ./bootstrap.
 | `HTTP_PORT` | _auto_ | Forçar porta HTTP (caso queira override) |
 | `HTTPS_PORT` | _auto_ | Forçar porta HTTPS |
 | `INSTALL_DIR` | `/opt/pinas` | Onde instalar o código |
+| `PINAS_FORCE_UPDATE` | `0` | Use `1` para atualizar sobrescrevendo alterações locais no `INSTALL_DIR` |
 
 ---
 
@@ -162,7 +163,7 @@ Esses são os **problemas reais** que aparecem em primeiras instalações e como
 
 ### Build do Go falhando por `go.sum` ausente
 **Causa:** Repo novo sem `go.sum` versionado, build não baixava deps.
-**Como resolvido:** Dockerfile copia código antes do `go mod tidy`.
+**Como resolvido:** `go.sum` é versionado e o Dockerfile usa `go mod download`.
 
 ---
 

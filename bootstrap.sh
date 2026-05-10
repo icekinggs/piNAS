@@ -17,6 +17,7 @@
 #   USB_DEVICE      Disco USB pra automount. Ex: /dev/sda1. Padrão: vazio
 #   SAMBA_USER      Usuário Samba a criar. Padrão: vazio
 #   INSTALL_DIR     Onde instalar o código. Padrão: /opt/pinas
+#   PINAS_FORCE_UPDATE=1 sobrescreve alterações locais no INSTALL_DIR git
 #
 # O script é idempotente: pode rodar de novo se algo der errado.
 
@@ -27,6 +28,17 @@ info()  { echo -e "${BLUE}==>${NC} $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[!!]${NC} $*"; }
 fail()  { echo -e "${RED}[ERRO]${NC} $*" >&2; exit 1; }
+
+set_env() {
+	local key="$1"
+	local value="$2"
+	local file="$3"
+	if grep -q "^${key}=" "$file" 2>/dev/null; then
+		sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+	else
+		printf '%s=%s\n' "$key" "$value" >> "$file"
+	fi
+}
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
 	fail "Execute como root: sudo $0"
@@ -41,6 +53,7 @@ USB_DEVICE="${USB_DEVICE:-}"
 SAMBA_USER="${SAMBA_USER:-}"
 HTTP_PORT="${HTTP_PORT:-}"
 HTTPS_PORT="${HTTPS_PORT:-}"
+PINAS_FORCE_UPDATE="${PINAS_FORCE_UPDATE:-0}"
 
 # ---------- sanity checks ----------
 info "Verificando ambiente..."
@@ -113,13 +126,20 @@ ok "Node.js: $(node --version)"
 info "Clonando PiNAS em $INSTALL_DIR..."
 if [[ -d "$INSTALL_DIR/.git" ]]; then
 	cd "$INSTALL_DIR"
-	# Descarta alterações locais EXCETO o override (gerado por nós).
-	git stash push --quiet -- $(git diff --name-only | grep -v override) 2>/dev/null || true
-	git checkout -- . 2>/dev/null || true
 	git fetch origin
-	git reset --hard "origin/$REPO_BRANCH"
+	if [[ "$PINAS_FORCE_UPDATE" == "1" ]]; then
+		warn "PINAS_FORCE_UPDATE=1: sobrescrevendo alteracoes locais em $INSTALL_DIR"
+		git reset --hard "origin/$REPO_BRANCH"
+	elif ! git diff --quiet || ! git diff --cached --quiet; then
+		fail "Alteracoes locais detectadas em $INSTALL_DIR. Revise/commite ou rode com PINAS_FORCE_UPDATE=1."
+	else
+		git checkout "$REPO_BRANCH" 2>/dev/null || git checkout -B "$REPO_BRANCH" "origin/$REPO_BRANCH"
+		git pull --ff-only origin "$REPO_BRANCH"
+	fi
 else
-	rm -rf "$INSTALL_DIR"
+	if [[ -e "$INSTALL_DIR" && -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
+		fail "$INSTALL_DIR existe e nao e um repositorio git. Remova ou escolha outro INSTALL_DIR."
+	fi
 	git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
 fi
 cd "$INSTALL_DIR"
@@ -137,6 +157,8 @@ PINAS_ADMIN_USERNAME=admin
 PINAS_ADMIN_PASSWORD=$ADMIN_PASS
 PINAS_ENV=production
 PINAS_LOG_LEVEL=info
+PINAS_HTTP_PORT=$HTTP_PORT
+PINAS_HTTPS_PORT=$HTTPS_PORT
 TZ=America/Sao_Paulo
 EOF
 	chmod 600 "$INSTALL_DIR/.env"
@@ -147,6 +169,8 @@ EOF
 else
 	ok ".env já existe"
 fi
+set_env PINAS_HTTP_PORT "$HTTP_PORT" "$INSTALL_DIR/.env"
+set_env PINAS_HTTPS_PORT "$HTTPS_PORT" "$INSTALL_DIR/.env"
 
 # ---------- 6. Disco USB ----------
 if [[ -n "$USB_DEVICE" ]]; then
@@ -191,7 +215,6 @@ ok "Diretórios persistentes prontos"
 # ---------- 9. docker-compose.override.yml ----------
 # Override gerado por host. NÃO vai pro Git.
 # Cobre apenas: user (UID:GID dinâmico) e volume de dados (DATA_DIR).
-# Portas: editamos docker-compose.yml direto via sed (mais robusto que `!reset`).
 info "Gerando docker-compose.override.yml..."
 cat > "$INSTALL_DIR/docker-compose.override.yml" <<EOF
 # Auto-gerado pelo bootstrap.sh — específico desta instalação.
@@ -205,20 +228,6 @@ services:
       - ${DATA_DIR}:/var/lib/pinas/data
 EOF
 ok "Override: user=$DATA_UID:$DATA_GID, data=$DATA_DIR"
-
-# ---------- 9b. portas no docker-compose.yml ----------
-# Compose !reset só existe em >= 2.24. Pra compatibilidade ampla, editamos direto.
-# Backup antes de qualquer alteração.
-if [[ "$HTTP_PORT" != "80" || "$HTTPS_PORT" != "443" ]]; then
-	info "Ajustando portas no docker-compose.yml (HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT)..."
-	cp "$INSTALL_DIR/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml.bak"
-	sed -i \
-		-e "s|- \"80:80\"|- \"${HTTP_PORT}:80\"|" \
-		-e "s|- \"443:443\"|- \"${HTTPS_PORT}:443\"|" \
-		-e "s|- \"443:443/udp\"|- \"${HTTPS_PORT}:443/udp\"|" \
-		"$INSTALL_DIR/docker-compose.yml"
-	ok "Portas no compose: $HTTP_PORT, $HTTPS_PORT (backup em docker-compose.yml.bak)"
-fi
 
 # ---------- 10. UFW ----------
 info "Configurando UFW..."
