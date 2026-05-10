@@ -47,6 +47,7 @@ Alternativa minimalista ao **TrueNAS / OpenMediaVault / CasaOS**:
 ssh seu_usuario@pinas.local
 git clone https://github.com/icekinggs/piNAS.git
 cd piNAS
+chmod +x bootstrap.sh
 sudo ./bootstrap.sh
 ```
 
