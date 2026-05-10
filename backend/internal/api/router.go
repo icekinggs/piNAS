@@ -13,6 +13,7 @@ import (
 	"github.com/pinas/pinas/internal/auth"
 	"github.com/pinas/pinas/internal/files"
 	"github.com/pinas/pinas/internal/middleware"
+	"github.com/pinas/pinas/internal/samba"
 	"github.com/pinas/pinas/internal/system"
 	"github.com/pinas/pinas/internal/users"
 	"github.com/pinas/pinas/internal/websocket"
@@ -26,6 +27,7 @@ type Deps struct {
 	UsersHandler  *users.Handler
 	FilesHandler  *files.Handler
 	SystemHandler *system.Handler
+	SambaHandler  *samba.Handler
 	WSHub         *websocket.Hub
 	AllowedOrigin string
 }
@@ -85,6 +87,12 @@ func NewRouter(d Deps) http.Handler {
 			r.Route("/users", func(r chi.Router) {
 				r.Use(middleware.RequireAdmin)
 				d.UsersHandler.Routes(r)
+			})
+
+			// /samba — só admin (gerencia shares e usuários SMB).
+			r.Route("/samba", func(r chi.Router) {
+				r.Use(middleware.RequireAdmin)
+				d.SambaHandler.Routes(r)
 			})
 
 			// WebSocket.

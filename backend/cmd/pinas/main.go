@@ -28,6 +28,7 @@ import (
 	"github.com/pinas/pinas/internal/database"
 	"github.com/pinas/pinas/internal/files"
 	"github.com/pinas/pinas/internal/logger"
+	"github.com/pinas/pinas/internal/samba"
 	"github.com/pinas/pinas/internal/storage"
 	"github.com/pinas/pinas/internal/system"
 	"github.com/pinas/pinas/internal/users"
@@ -119,6 +120,18 @@ func main() {
 	filesHandler := files.NewHandler(jail)
 	systemHandler := system.NewHandler(jail)
 
+	// Samba — store + service + handler.
+	// O store grava em SambaStateDir (default /var/lib/pinas/samba), que é
+	// bind-mountado no host em /srv/pinas/samba. Um watcher no host
+	// (pinas-samba-sync.path) detecta mudanças e aplica via samba-sync.sh.
+	sambaStore, err := samba.NewStore(cfg.SambaStateDir)
+	if err != nil {
+		log.Error("samba store", "err", err)
+		os.Exit(1)
+	}
+	sambaSvc := samba.NewService(sambaStore)
+	sambaHandler := samba.NewHandler(sambaSvc)
+
 	// Router.
 	router := api.NewRouter(api.Deps{
 		Logger:        log,
@@ -127,6 +140,7 @@ func main() {
 		UsersHandler:  usersHandler,
 		FilesHandler:  filesHandler,
 		SystemHandler: systemHandler,
+		SambaHandler:  sambaHandler,
 		WSHub:         hub,
 		AllowedOrigin: cfg.AllowedOrigin,
 	})

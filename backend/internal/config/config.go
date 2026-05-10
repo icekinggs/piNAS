@@ -17,6 +17,7 @@ type Config struct {
 	ThumbsDir       string
 	LogsDir         string
 	SecretsDir      string
+	SambaStateDir   string
 	AdminUsername   string
 	AdminPassword   string
 	JWTTTL          time.Duration
@@ -34,6 +35,7 @@ func Load() (*Config, error) {
 		ThumbsDir:     getEnv("PINAS_THUMBS_DIR", "/var/lib/pinas/thumbs"),
 		LogsDir:       getEnv("PINAS_LOGS_DIR", "/var/lib/pinas/logs"),
 		SecretsDir:    getEnv("PINAS_SECRETS_DIR", "/var/lib/pinas/secrets"),
+		SambaStateDir: getEnv("PINAS_SAMBA_STATE_DIR", "/var/lib/pinas/samba"),
 		AdminUsername: getEnv("PINAS_ADMIN_USERNAME", "admin"),
 		AdminPassword: os.Getenv("PINAS_ADMIN_PASSWORD"),
 		AllowedOrigin: getEnv("PINAS_ALLOWED_ORIGIN", "https://pinas.local"),

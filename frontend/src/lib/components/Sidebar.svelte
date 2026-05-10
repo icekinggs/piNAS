@@ -7,9 +7,10 @@
 	const items = [
 		{ href: '/dashboard', label: 'Dashboard', code: '01' },
 		{ href: '/files',     label: 'Arquivos',  code: '02' },
-		{ href: '/users',     label: 'Usuários',  code: '03', adminOnly: true },
-		{ href: '/system',    label: 'Sistema',   code: '04' },
-		{ href: '/settings',  label: 'Ajustes',   code: '05' }
+		{ href: '/samba',     label: 'Samba',     code: '03', adminOnly: true },
+		{ href: '/users',     label: 'Usuários',  code: '04', adminOnly: true },
+		{ href: '/system',    label: 'Sistema',   code: '05' },
+		{ href: '/settings',  label: 'Ajustes',   code: '06' }
 	];
 
 	async function logout() {

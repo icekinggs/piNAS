@@ -1,0 +1,28 @@
+# PiNAS — pinas-samba-sync.path
+#
+# Watcher inotify: quando /srv/pinas/samba/desired-state.json é modificado
+# (pelo backend Go via API), dispara automaticamente pinas-samba-sync.service.
+#
+# Habilitar:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pinas-samba-sync.path
+#
+# Verificar:
+#   systemctl status pinas-samba-sync.path
+#   journalctl -u pinas-samba-sync.service -f
+
+[Unit]
+Description=PiNAS Samba sync watcher — observa mudanças no desired-state.json
+After=smbd.service
+
+[Path]
+# PathChanged dispara em qualquer mudança (write, atomic rename do tmp).
+# Funciona com escrita atômica (tmp + rename) que o backend usa.
+PathChanged=/srv/pinas/samba/desired-state.json
+# Cooldown: aceita disparos no máximo a cada 1s pra agrupar mudanças rápidas.
+TriggerLimitIntervalSec=1
+TriggerLimitBurst=10
+Unit=pinas-samba-sync.service
+
+[Install]
+WantedBy=multi-user.target

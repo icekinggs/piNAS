@@ -1,0 +1,29 @@
+# PiNAS — pinas-samba-sync.service
+#
+# Roda /opt/pinas/scripts/samba-sync.sh quando o desired-state.json muda.
+# É disparado pelo pinas-samba-sync.path (inotify watcher).
+#
+# Pode ser disparado manualmente também:
+#   sudo systemctl start pinas-samba-sync.service
+
+[Unit]
+Description=PiNAS Samba sync — aplica desired-state.json no Samba
+After=smbd.service
+Requires=smbd.service
+
+[Service]
+Type=oneshot
+# Path absoluto pra evitar PATH issues quando rodado por systemd.
+ExecStart=/opt/pinas/scripts/samba-sync.sh
+# Limita a 60s pra não travar pra sempre se algo der errado.
+TimeoutStartSec=60
+# Stdout/stderr vão pro journal (vê com: journalctl -u pinas-samba-sync.service)
+StandardOutput=journal
+StandardError=journal
+# Hardening básico — script precisa de root pra editar smb.conf.
+PrivateTmp=yes
+ProtectHome=read-only
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

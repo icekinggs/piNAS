@@ -185,6 +185,7 @@ install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/db
 install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/thumbs
 install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/logs
 install -d -m 0700 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/secrets
+install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/samba
 ok "Diretórios persistentes prontos"
 
 # ---------- 9. docker-compose.override.yml ----------
@@ -250,10 +251,26 @@ systemctl enable --now fail2ban
 systemctl restart fail2ban
 ok "Avahi + Fail2Ban ativos"
 
-# ---------- 12. Samba ----------
+# ---------- 12. Samba (sempre instalado, gerenciamento via UI) ----------
+info "Instalando Samba (gerenciado via painel web em /samba)..."
+DEBIAN_FRONTEND=noninteractive apt-get install -y samba samba-common-bin
+ok "Samba instalado"
+
+# Instala os systemd units do sync watcher.
+info "Instalando watcher de sync Samba..."
+cp "$INSTALL_DIR/deploy/systemd/pinas-samba-sync.service" /etc/systemd/system/
+cp "$INSTALL_DIR/deploy/systemd/pinas-samba-sync.path"    /etc/systemd/system/
+# Ajusta path pro INSTALL_DIR real (default é /opt/pinas, mas pode mudar).
+sed -i "s|/opt/pinas|$INSTALL_DIR|g" /etc/systemd/system/pinas-samba-sync.service
+chmod +x "$INSTALL_DIR/scripts/samba-sync.sh"
+systemctl daemon-reload
+systemctl enable --now pinas-samba-sync.path
+ok "Watcher pinas-samba-sync.path ativo"
+
+# Modo legado: se SAMBA_USER foi passado, ainda configura via script antigo.
+# Útil pra criar um usuário inicial junto com o setup.
 if [[ -n "$SAMBA_USER" ]]; then
-	info "Configurando Samba para '$SAMBA_USER'..."
-	apt-get install -y samba samba-common-bin
+	info "Configurando usuário Samba inicial '$SAMBA_USER' (modo legado)..."
 	bash "$INSTALL_DIR/scripts/samba-setup.sh" "$SAMBA_USER" || warn "samba-setup falhou"
 fi
 

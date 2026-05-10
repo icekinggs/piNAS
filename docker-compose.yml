@@ -33,6 +33,9 @@ services:
       - /srv/pinas/secrets:/var/lib/pinas/secrets
       - /srv/pinas/thumbs:/var/lib/pinas/thumbs
       - /srv/pinas/logs:/var/lib/pinas/logs
+      # Estado declarativo do Samba — backend só escreve aqui.
+      # Watcher no host (pinas-samba-sync.path) aplica em /etc/samba/smb.conf.
+      - /srv/pinas/samba:/var/lib/pinas/samba
       # Pasta de dados — sobrescrita pelo override.yml gerado pelo bootstrap.
       # Default aqui é /srv/pinas/data, mas o bootstrap pode apontar pra
       # /home/<user> ou um disco USB conforme detectado.
