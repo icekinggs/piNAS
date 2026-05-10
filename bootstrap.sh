@@ -1,30 +1,24 @@
 #!/usr/bin/env bash
 # PiNAS — bootstrap.sh
 #
-# Script ÚNICO de instalação e atualização do PiNAS em Raspberry Pi/Ubuntu Server.
-# Pode ser usado tanto em instalação limpa quanto para atualizar uma instalação existente.
+# Script ÚNICO de instalação a partir do zero num Raspberry Pi com
+# Ubuntu Server 24.04 LTS ARM64 recém-instalado.
 #
 # Uso (clonando manualmente):
 #   git clone https://github.com/icekinggs/piNAS.git
 #   cd piNAS
 #   sudo ./bootstrap.sh
 #
-# Atualização de instalação existente:
-#   cd /opt/pinas
-#   sudo ./bootstrap.sh
-#
 # Variáveis opcionais (use com `sudo VAR=valor ./bootstrap.sh`):
 #   DATA_DIR        Onde ficam os arquivos do NAS. Padrão: /srv/pinas/data
+#                   Pra integrar com Samba existente: DATA_DIR=/home/seu_usuario
 #   HTTP_PORT       Porta HTTP. Padrão: auto-detecta (80 ou 8080 se ocupada)
 #   HTTPS_PORT      Porta HTTPS. Padrão: auto-detecta (443 ou 8443 se ocupada)
 #   USB_DEVICE      Disco USB pra automount. Ex: /dev/sda1. Padrão: vazio
 #   SAMBA_USER      Usuário Samba a criar. Padrão: vazio
 #   INSTALL_DIR     Onde instalar o código. Padrão: /opt/pinas
-#   PINAS_MODE      auto, install ou update. Padrão: auto
-#   SKIP_BACKUP     1 para não criar backup pré-update. Padrão: 0
-#   BACKUP_DIR      Onde guardar backups. Padrão: /srv/pinas/backups
 #
-# O script é idempotente: pode rodar de novo para instalar, reparar ou atualizar.
+# O script é idempotente: pode rodar de novo se algo der errado.
 
 set -euo pipefail
 
@@ -47,60 +41,6 @@ USB_DEVICE="${USB_DEVICE:-}"
 SAMBA_USER="${SAMBA_USER:-}"
 HTTP_PORT="${HTTP_PORT:-}"
 HTTPS_PORT="${HTTPS_PORT:-}"
-PINAS_MODE="${PINAS_MODE:-auto}"
-SKIP_BACKUP="${SKIP_BACKUP:-0}"
-BACKUP_DIR="${BACKUP_DIR:-/srv/pinas/backups}"
-
-# ---------- lifecycle install/update ----------
-detect_mode() {
-	if [[ "$PINAS_MODE" != "auto" ]]; then
-		echo "$PINAS_MODE"
-		return
-	fi
-
-	if [[ -d "$INSTALL_DIR/.git" || -f "$INSTALL_DIR/.env" || -f /etc/systemd/system/pinas.service ]]; then
-		echo "update"
-	else
-		echo "install"
-	fi
-}
-
-MODE="$(detect_mode)"
-case "$MODE" in
-	install|update) ;;
-	*) fail "PINAS_MODE inválido: $MODE. Use auto, install ou update." ;;
-esac
-ok "Modo: $MODE"
-
-backup_existing_install() {
-	[[ "$MODE" == "update" ]] || return 0
-	[[ "$SKIP_BACKUP" == "1" ]] && { warn "Backup pré-update desativado por SKIP_BACKUP=1"; return 0; }
-
-	local stamp dest
-	stamp="$(date +%Y%m%d-%H%M%S)"
-	dest="$BACKUP_DIR/pre-update-$stamp"
-
-	info "Criando backup pré-update em $dest..."
-	install -d -m 0750 "$dest"
-
-	[[ -f "$INSTALL_DIR/.env" ]] && cp -a "$INSTALL_DIR/.env" "$dest/.env"
-	[[ -f "$INSTALL_DIR/docker-compose.override.yml" ]] && cp -a "$INSTALL_DIR/docker-compose.override.yml" "$dest/docker-compose.override.yml"
-	[[ -f "$INSTALL_DIR/docker-compose.yml" ]] && cp -a "$INSTALL_DIR/docker-compose.yml" "$dest/docker-compose.yml"
-	[[ -d /srv/pinas/db ]] && rsync -a --delete /srv/pinas/db/ "$dest/db/" || true
-	[[ -d /srv/pinas/configs ]] && rsync -a --delete /srv/pinas/configs/ "$dest/configs/" || true
-	[[ -d /srv/pinas/apps ]] && rsync -a --delete /srv/pinas/apps/ "$dest/apps/" || true
-
-	cat > "$dest/restore-note.txt" <<EOF
-Backup criado automaticamente antes de atualizar o PiNAS.
-Data: $(date -Iseconds)
-Install dir: $INSTALL_DIR
-Branch: $REPO_BRANCH
-
-Este backup preserva configuração, banco, manifests e override local.
-Ele NÃO copia a pasta de dados do NAS para evitar duplicar arquivos grandes.
-EOF
-	ok "Backup pré-update criado: $dest"
-}
 
 # ---------- sanity checks ----------
 info "Verificando ambiente..."
@@ -170,18 +110,14 @@ fi
 ok "Node.js: $(node --version)"
 
 # ---------- 4. Repositório ----------
-backup_existing_install
-if [[ "$MODE" == "update" ]]; then
-	info "Atualizando PiNAS em $INSTALL_DIR..."
-else
-	info "Clonando PiNAS em $INSTALL_DIR..."
-fi
-
+info "Clonando PiNAS em $INSTALL_DIR..."
 if [[ -d "$INSTALL_DIR/.git" ]]; then
 	cd "$INSTALL_DIR"
-	git fetch origin "$REPO_BRANCH"
+	# Descarta alterações locais EXCETO o override (gerado por nós).
+	git stash push --quiet -- $(git diff --name-only | grep -v override) 2>/dev/null || true
+	git checkout -- . 2>/dev/null || true
+	git fetch origin
 	git reset --hard "origin/$REPO_BRANCH"
-	git clean -fd -e .env -e docker-compose.override.yml -e docker-compose.yml.bak
 else
 	rm -rf "$INSTALL_DIR"
 	git clone --branch "$REPO_BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
@@ -223,9 +159,11 @@ if [[ -n "$USB_DEVICE" ]]; then
 fi
 
 # ---------- 7. Detecção de UID:GID do dono dos dados ----------
+# Esta é a peça que evita problemas de permissão entre host e container.
 info "Detectando dono de $DATA_DIR..."
 
 if [[ ! -d "$DATA_DIR" ]]; then
+	# Cria com permissões de quem invocou sudo (não root).
 	REAL_USER="${SUDO_USER:-$(getent passwd 1000 | cut -d: -f1)}"
 	if [[ -z "$REAL_USER" || "$REAL_USER" == "root" ]]; then
 		REAL_USER=$(getent passwd 1000 | cut -d: -f1)
@@ -246,15 +184,14 @@ install -d -m 0750 /srv/pinas
 install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/db
 install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/thumbs
 install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/logs
-install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/configs
-install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/apps
-install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/docker
-install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" "$BACKUP_DIR"
 install -d -m 0700 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/secrets
 install -d -m 0750 -o "$DATA_UID" -g "$DATA_GID" /srv/pinas/samba
 ok "Diretórios persistentes prontos"
 
 # ---------- 9. docker-compose.override.yml ----------
+# Override gerado por host. NÃO vai pro Git.
+# Cobre apenas: user (UID:GID dinâmico) e volume de dados (DATA_DIR).
+# Portas: editamos docker-compose.yml direto via sed (mais robusto que `!reset`).
 info "Gerando docker-compose.override.yml..."
 cat > "$INSTALL_DIR/docker-compose.override.yml" <<EOF
 # Auto-gerado pelo bootstrap.sh — específico desta instalação.
@@ -270,6 +207,8 @@ EOF
 ok "Override: user=$DATA_UID:$DATA_GID, data=$DATA_DIR"
 
 # ---------- 9b. portas no docker-compose.yml ----------
+# Compose !reset só existe em >= 2.24. Pra compatibilidade ampla, editamos direto.
+# Backup antes de qualquer alteração.
 if [[ "$HTTP_PORT" != "80" || "$HTTPS_PORT" != "443" ]]; then
 	info "Ajustando portas no docker-compose.yml (HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT)..."
 	cp "$INSTALL_DIR/docker-compose.yml" "$INSTALL_DIR/docker-compose.yml.bak"
@@ -312,20 +251,24 @@ systemctl enable --now fail2ban
 systemctl restart fail2ban
 ok "Avahi + Fail2Ban ativos"
 
-# ---------- 12. Samba ----------
+# ---------- 12. Samba (sempre instalado, gerenciamento via UI) ----------
 info "Instalando Samba (gerenciado via painel web em /samba)..."
 DEBIAN_FRONTEND=noninteractive apt-get install -y samba samba-common-bin
 ok "Samba instalado"
 
+# Instala os systemd units do sync watcher.
 info "Instalando watcher de sync Samba..."
 cp "$INSTALL_DIR/deploy/systemd/pinas-samba-sync.service" /etc/systemd/system/
 cp "$INSTALL_DIR/deploy/systemd/pinas-samba-sync.path"    /etc/systemd/system/
+# Ajusta path pro INSTALL_DIR real (default é /opt/pinas, mas pode mudar).
 sed -i "s|/opt/pinas|$INSTALL_DIR|g" /etc/systemd/system/pinas-samba-sync.service
 chmod +x "$INSTALL_DIR/scripts/samba-sync.sh"
 systemctl daemon-reload
 systemctl enable --now pinas-samba-sync.path
 ok "Watcher pinas-samba-sync.path ativo"
 
+# Modo legado: se SAMBA_USER foi passado, ainda configura via script antigo.
+# Útil pra criar um usuário inicial junto com o setup.
 if [[ -n "$SAMBA_USER" ]]; then
 	info "Configurando usuário Samba inicial '$SAMBA_USER' (modo legado)..."
 	bash "$INSTALL_DIR/scripts/samba-setup.sh" "$SAMBA_USER" || warn "samba-setup falhou"
@@ -334,11 +277,7 @@ fi
 # ---------- 13. Build do frontend ----------
 info "Build do frontend (1-3 min no Pi 4)..."
 cd "$INSTALL_DIR/frontend"
-if [[ -f package-lock.json ]]; then
-	npm ci
-else
-	npm install
-fi
+[[ -d node_modules ]] || (npm ci 2>/dev/null || npm install)
 npm run build
 ok "Frontend OK"
 
@@ -375,10 +314,9 @@ URL_SUFFIX=""
 
 echo
 echo -e "${GREEN}╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║                  PiNAS pronto com sucesso!                   ║${NC}"
+echo -e "${GREEN}║                  PiNAS instalado com sucesso!                 ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${NC}"
 echo
-echo -e "  ${BLUE}Modo:${NC}             $MODE"
 echo -e "  ${BLUE}Acesso web:${NC}       https://${HOSTNAME_LOCAL}${URL_SUFFIX}"
 echo -e "                     https://${IP_LOCAL}${URL_SUFFIX}"
 echo
@@ -387,7 +325,6 @@ echo -e "  ${BLUE}Senha:${NC}            $ADMIN_PASS"
 echo -e "                     (também em /root/.pinas/admin-password.txt)"
 echo
 echo -e "  ${BLUE}Pasta de dados:${NC}   $DATA_DIR  (UID:GID $DATA_UID:$DATA_GID)"
-echo -e "  ${BLUE}Backups:${NC}          $BACKUP_DIR"
 echo
 echo -e "  ${YELLOW}Aviso:${NC} navegador mostra 'conexão não privada' na 1ª vez."
 echo -e "         É TLS local. Clique em 'Avançado' > 'Continuar'."
@@ -396,7 +333,6 @@ echo -e "  ${BLUE}Comandos úteis:${NC}"
 echo -e "    cd $INSTALL_DIR && sudo docker compose ps"
 echo -e "    cd $INSTALL_DIR && sudo docker compose logs -f"
 echo -e "    sudo systemctl restart pinas"
-echo -e "    cd $INSTALL_DIR && sudo ./bootstrap.sh   # instalar/reparar/atualizar"
 echo
 [[ -z "$USB_DEVICE" ]] && echo -e "  ${BLUE}Próximos passos opcionais:${NC}"
 [[ -z "$USB_DEVICE" ]] && echo -e "    • Disco USB:  sudo $INSTALL_DIR/scripts/automount-disk.sh /dev/sdXY"
