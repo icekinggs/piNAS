@@ -58,7 +58,7 @@ Espera ~20 min. No final imprime URL e senha do admin. Pronto.
 ✅ **Conflito de portas** — Se 80/443 já estão em uso (Pi-hole, etc), usa 8080/8443
 ✅ **UID:GID do dono dos dados** — Container roda com o mesmo UID:GID, sem problema de permissão
 ✅ **Existência de Docker/Node** — Pula reinstalação se já presentes
-✅ **Hostname mDNS** — Configura `https://<seu-hostname>.local`
+✅ **Hostname mDNS** — Configura `https://pinas.local`
 
 ---
 
