@@ -1,0 +1,16 @@
+/* PiNAS Web OS utility classes */
+.os-glass {
+	background: var(--os-surface);
+	backdrop-filter: var(--os-blur);
+	-webkit-backdrop-filter: var(--os-blur);
+	border: 1px solid var(--os-border);
+	box-shadow: var(--os-shadow);
+}
+
+.os-panel {
+	border-radius: var(--os-radius);
+}
+
+.os-text-muted {
+	color: var(--os-text-muted);
+}
