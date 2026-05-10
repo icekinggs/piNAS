@@ -1,0 +1,23 @@
+:root {
+	--os-bg: #06080d;
+	--os-surface: rgba(15, 19, 28, 0.72);
+	--os-surface-strong: rgba(18, 23, 34, 0.92);
+	--os-surface-soft: rgba(255, 255, 255, 0.055);
+	--os-border: rgba(255, 255, 255, 0.105);
+	--os-border-strong: rgba(255, 255, 255, 0.18);
+	--os-text: #f4f7fb;
+	--os-text-muted: #a8b2c1;
+	--os-text-dim: #6f7b8d;
+	--os-accent: #7cf25b;
+	--os-accent-2: #5bbef2;
+	--os-danger: #f25b4a;
+	--os-warn: #f2c14e;
+	--os-radius-sm: 8px;
+	--os-radius: 14px;
+	--os-radius-lg: 22px;
+	--os-topbar-h: 40px;
+	--os-dock-h: 72px;
+	--os-blur: blur(22px) saturate(135%);
+	--os-shadow: 0 24px 80px rgba(0, 0, 0, 0.34), 0 2px 8px rgba(0, 0, 0, 0.28);
+	--os-ease: cubic-bezier(.2,.8,.2,1);
+}
