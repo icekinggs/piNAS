@@ -1,22 +1,29 @@
 import { windows, activeWindowId } from './WindowStore.js';
+import { findAppById } from '../../modules/apps/registry.js';
 
 let nextWindowId = 1;
 let nextWindowZ = 20;
 
 export const WindowManager = {
 	open(appId) {
+		const app = findAppById(appId);
+		if (!app) return null;
+
 		const id = 'window-' + nextWindowId;
 		nextWindowId = nextWindowId + 1;
 		nextWindowZ = nextWindowZ + 1;
 
+		const config = app.window || {};
 		const win = {
 			id,
 			appId,
-			title: appId,
+			title: app.title,
+			icon: app.icon,
+			route: app.route,
 			x: 96,
 			y: 86,
-			width: 920,
-			height: 620,
+			width: config.width || 920,
+			height: config.height || 620,
 			zIndex: nextWindowZ,
 			state: 'normal'
 		};
