@@ -3,6 +3,7 @@
 	import { api } from '$lib/api/client.js';
 	import { formatBytes, formatDate } from '$lib/utils/format.js';
 	import { auth } from '$lib/stores/auth.js';
+	import { toast } from '$lib/stores/toasts.js';
 	import { goto } from '$app/navigation';
 
 	let users = [];
@@ -26,34 +27,49 @@
 		creating = true;
 		try {
 			await api('/users', { method: 'POST', body: newUser });
+			toast.success('Usuário criado', `"${newUser.username}" foi adicionado.`);
 			newUser = { username: '', password: '', role: 'user', quota_bytes: 0 };
 			await load();
-		} catch (e) { alert(e.message); }
+		} catch (e) { toast.error('Falha ao criar usuário', e.message); }
 		finally { creating = false; }
 	}
 
 	async function toggleDisabled(u) {
 		try {
 			await api(`/users/${u.id}`, { method: 'PATCH', body: { disabled: !u.disabled } });
+			toast.success(
+				u.disabled ? 'Usuário ativado' : 'Usuário desativado',
+				`"${u.username}" agora está ${u.disabled ? 'ativo' : 'inativo'}.`
+			);
 			await load();
-		} catch (e) { alert(e.message); }
+		} catch (e) { toast.error('Falha', e.message); }
 	}
 
 	async function delUser(u) {
-		if (!confirm(`Excluir ${u.username}?`)) return;
+		const ok = await toast.confirm(`Excluir usuário "${u.username}"?`, {
+			message: 'Esta ação não pode ser desfeita. Os arquivos do usuário não serão apagados.',
+			destructive: true,
+			confirmLabel: 'Excluir'
+		});
+		if (!ok) return;
 		try {
 			await api(`/users/${u.id}`, { method: 'DELETE' });
+			toast.success('Usuário excluído', `"${u.username}" foi removido.`);
 			await load();
-		} catch (e) { alert(e.message); }
+		} catch (e) { toast.error('Falha ao excluir', e.message); }
 	}
 
 	async function changePass(u) {
 		const p = prompt(`Nova senha para ${u.username}:`);
 		if (!p) return;
+		if (p.length < 8) {
+			toast.warn('Senha curta', 'Mínimo 8 caracteres.');
+			return;
+		}
 		try {
 			await api(`/users/${u.id}/password`, { method: 'POST', body: { new_password: p } });
-			alert('senha alterada');
-		} catch (e) { alert(e.message); }
+			toast.success('Senha alterada', `Nova senha de "${u.username}" foi salva.`);
+		} catch (e) { toast.error('Falha ao alterar senha', e.message); }
 	}
 
 	onMount(() => {

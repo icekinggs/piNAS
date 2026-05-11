@@ -1,0 +1,107 @@
+name: CI
+
+# Roda em push/PR pra main. Feedback rápido: lint + build do frontend,
+# vet + test do backend. Não publica nada — isso é trabalho do release.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela runs anteriores do mesmo branch/PR se um novo commit chegar.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (SvelteKit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      # `npm ci` quebra se não tiver package-lock.json — graceful fallback.
+      - name: Install deps
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Type check (svelte-check)
+        run: npm run check --if-present
+        continue-on-error: true   # ainda não bloqueante; vira hard fail depois
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          if [ ! -d build ] || [ -z "$(ls -A build)" ]; then
+            echo "::error::Build output vazio em frontend/build/"
+            exit 1
+          fi
+          echo "Build OK ($(du -sh build | cut -f1))"
+
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: backend/go.sum
+
+      # CGO é necessário pro driver SQLite mattn.
+      - name: Install build deps
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        env:
+          CGO_ENABLED: 1
+        run: go build -v ./...
+
+      - name: Test
+        env:
+          CGO_ENABLED: 1
+        run: go test -race -timeout 90s ./...
+
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck
+        # Checa scripts mas com SC2086 (quoting) e SC1091 (source) como warnings.
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: error
+          scandir: './scripts'
+        env:
+          SHELLCHECK_OPTS: -e SC1091

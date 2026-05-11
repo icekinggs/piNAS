@@ -41,6 +41,12 @@ import (
 var migrationsDir = "/usr/local/share/pinas/migrations"
 
 func main() {
+	// Subcomandos administrativos (reset-admin, version, help).
+	// Se foi um subcomando, sai sem subir HTTP.
+	if handled, code := dispatchCLI(); handled {
+		os.Exit(code)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		// Logger ainda não existe; saída direta.

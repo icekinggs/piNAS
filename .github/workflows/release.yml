@@ -1,0 +1,132 @@
+name: Release
+
+# Dispara em tags `v*.*.*` (ex: v0.2.0, v0.3.0).
+# Buildea o frontend em runners potentes, empacota como tarball,
+# cria/atualiza GitHub Release e anexa o artefato.
+#
+# Pra publicar uma release:
+#   git tag v0.3.0 && git push origin v0.3.0
+#
+# No Pi, o bootstrap.sh detecta esse artefato e baixa em vez de buildar local.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write   # criar release + upload de assets
+
+jobs:
+  build-frontend:
+    name: Build frontend tarball
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: Extract version from tag
+        run: |
+          # GITHUB_REF = refs/tags/v0.3.0  →  version=0.3.0
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        working-directory: frontend
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - id: pack
+        name: Pack tarball
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          TARBALL="pinas-frontend-${VERSION}.tar.gz"
+
+          # Tarball: conteúdo de frontend/build empacotado em diretório `frontend-build/`
+          # pra que `tar -xzf` extraia num lugar previsível.
+          cd frontend
+          tar --transform "s,^build,frontend-build," -czf "../$TARBALL" build
+
+          # SHA256 pra verificação no Pi.
+          cd ..
+          sha256sum "$TARBALL" > "${TARBALL}.sha256"
+
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "Created $TARBALL ($(du -sh "$TARBALL" | cut -f1))"
+          echo "SHA256: $(cat "${TARBALL}.sha256")"
+
+      - name: Upload artifacts to job
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-tarball
+          path: |
+            pinas-frontend-*.tar.gz
+            pinas-frontend-*.tar.gz.sha256
+          retention-days: 7
+
+  release:
+    name: Create GitHub Release
+    needs: build-frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-tarball
+
+      - name: Extract changelog section (opcional)
+        id: changelog
+        run: |
+          VERSION="${{ needs.build-frontend.outputs.version }}"
+          # Se houver CHANGELOG.md, tenta extrair a seção dessa versão.
+          if [ -f CHANGELOG.md ]; then
+            awk "/^## \\[?v?${VERSION}\\]?/,/^## /" CHANGELOG.md \
+              | sed '$d' > release-notes.md || true
+          fi
+          # Fallback: usa mensagem da tag.
+          if [ ! -s release-notes.md ]; then
+            git tag -l --format='%(contents)' "v${VERSION}" > release-notes.md
+          fi
+          # Fallback final.
+          if [ ! -s release-notes.md ]; then
+            echo "PiNAS v${VERSION}" > release-notes.md
+            echo "" >> release-notes.md
+            echo "Veja [CHANGELOG.md](./CHANGELOG.md) ou o histórico de commits." >> release-notes.md
+          fi
+          cat release-notes.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PiNAS v${{ needs.build-frontend.outputs.version }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: ${{ contains(needs.build-frontend.outputs.version, '-') }}
+          files: |
+            pinas-frontend-*.tar.gz
+            pinas-frontend-*.tar.gz.sha256

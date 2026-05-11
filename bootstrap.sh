@@ -274,11 +274,82 @@ if [[ -n "$SAMBA_USER" ]]; then
 	bash "$INSTALL_DIR/scripts/samba-setup.sh" "$SAMBA_USER" || warn "samba-setup falhou"
 fi
 
-# ---------- 13. Build do frontend ----------
-info "Build do frontend (1-3 min no Pi 4)..."
-cd "$INSTALL_DIR/frontend"
-[[ -d node_modules ]] || (npm ci 2>/dev/null || npm install)
-npm run build
+# ---------- 13. Frontend ----------
+# Estratégia: baixa tarball pré-buildado do GitHub Release (rápido, segundos)
+# e cai pra build local (1-3 min no Pi 4) se não tiver internet ou release.
+build_frontend_local() {
+	info "Build do frontend local (1-3 min no Pi 4)..."
+	cd "$INSTALL_DIR/frontend"
+	if ! command -v npm >/dev/null 2>&1; then
+		err "npm não instalado. Instale Node.js 20+ ou rode com PINAS_FRONTEND_TARBALL apontando pra um tarball."
+		exit 1
+	fi
+	[[ -d node_modules ]] || (npm ci 2>/dev/null || npm install)
+	npm run build
+	cd "$INSTALL_DIR"
+}
+
+try_frontend_tarball() {
+	local version="${PINAS_VERSION:-latest}"
+	local repo="${PINAS_REPO:-icekinggs/piNAS}"
+	local url
+
+	# Override explícito (PINAS_FRONTEND_TARBALL=https://...) tem prioridade.
+	if [[ -n "${PINAS_FRONTEND_TARBALL:-}" ]]; then
+		url="$PINAS_FRONTEND_TARBALL"
+	elif [[ "$version" == "latest" ]]; then
+		# Resolve `latest` via API do GitHub.
+		local api="https://api.github.com/repos/${repo}/releases/latest"
+		url=$(curl -fsSL "$api" 2>/dev/null \
+			| grep -o '"browser_download_url":[^,]*pinas-frontend-[^"]*\.tar\.gz"' \
+			| head -1 \
+			| sed 's/.*"browser_download_url": *"\([^"]*\)".*/\1/')
+	else
+		url="https://github.com/${repo}/releases/download/v${version}/pinas-frontend-${version}.tar.gz"
+	fi
+
+	if [[ -z "$url" ]]; then
+		info "Nenhum tarball encontrado (versão ${version}). Vou buildar local."
+		return 1
+	fi
+
+	info "Baixando frontend pré-buildado: $url"
+	local tmp; tmp=$(mktemp -d)
+	if ! curl -fsSL --connect-timeout 10 -o "$tmp/frontend.tar.gz" "$url"; then
+		info "Download falhou. Vou buildar local."
+		rm -rf "$tmp"
+		return 1
+	fi
+
+	# Valida SHA256 se houver .sha256 disponível.
+	if curl -fsSL --connect-timeout 5 -o "$tmp/frontend.tar.gz.sha256" "${url}.sha256" 2>/dev/null; then
+		# O arquivo .sha256 vem no formato "HASH  nome-do-arquivo".
+		local expected actual
+		expected=$(awk '{print $1}' "$tmp/frontend.tar.gz.sha256")
+		actual=$(sha256sum "$tmp/frontend.tar.gz" | awk '{print $1}')
+		if [[ "$expected" != "$actual" ]]; then
+			err "SHA256 não bate. Esperado $expected, recebido $actual."
+			rm -rf "$tmp"
+			return 1
+		fi
+		ok "SHA256 validado"
+	fi
+
+	# Extrai pra frontend/build. O tarball usa prefixo `frontend-build/`.
+	rm -rf "$INSTALL_DIR/frontend/build"
+	tar -xzf "$tmp/frontend.tar.gz" -C "$tmp"
+	mv "$tmp/frontend-build" "$INSTALL_DIR/frontend/build"
+	rm -rf "$tmp"
+	ok "Frontend extraído ($(du -sh "$INSTALL_DIR/frontend/build" | cut -f1))"
+	return 0
+}
+
+# PINAS_SKIP_TARBALL=1 força build local (útil pra dev).
+if [[ "${PINAS_SKIP_TARBALL:-0}" == "1" ]]; then
+	build_frontend_local
+elif ! try_frontend_tarball; then
+	build_frontend_local
+fi
 ok "Frontend OK"
 
 # ---------- 14. Stack Docker ----------

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$lib/api/client.js';
 	import { formatBytes, formatDate, pathParts, joinPath } from '$lib/utils/format.js';
+	import { toast } from '$lib/stores/toasts.js';
 
 	export let initialPath = '/';
 
@@ -57,18 +58,31 @@
 	}
 
 	async function deleteEntry(path) {
-		if (!confirm(`Excluir ${path}?`)) return;
+		const ok = await toast.confirm(`Excluir ${path}?`, { destructive: true });
+		if (!ok) return;
 		try {
 			await api('/files', { method: 'DELETE', query: { path } });
+			toast.success('Excluído');
 			await load(cwd);
-		} catch (e) { alert(e.message); }
+		} catch (e) {
+			toast.error('Falha ao excluir', e.message);
+		}
 	}
 
 	async function deleteSelected() {
 		if (selected.size === 0) return;
-		if (!confirm(`Excluir ${selected.size} item(ns)?`)) return;
+		const n = selected.size;
+		const ok = await toast.confirm(`Excluir ${n} item(ns)?`, { destructive: true });
+		if (!ok) return;
+		let failures = 0;
 		for (const p of selected) {
-			try { await api('/files', { method: 'DELETE', query: { path: p } }); } catch {}
+			try { await api('/files', { method: 'DELETE', query: { path: p } }); }
+			catch { failures++; }
+		}
+		if (failures === 0) {
+			toast.success(`${n} item(ns) excluído(s)`);
+		} else {
+			toast.warn(`${n - failures} excluído(s)`, `${failures} falha(s)`);
 		}
 		await load(cwd);
 	}
@@ -81,8 +95,11 @@
 				method: 'POST',
 				body: { path: joinPath(cwd, name) }
 			});
+			toast.success('Pasta criada', name);
 			await load(cwd);
-		} catch (e) { alert(e.message); }
+		} catch (e) {
+			toast.error('Falha ao criar pasta', e.message);
+		}
 	}
 
 	async function renameEntry(path, oldName) {
@@ -93,20 +110,33 @@
 				method: 'PATCH',
 				body: { path, new_name: newName }
 			});
+			toast.success('Renomeado');
 			await load(cwd);
-		} catch (e) { alert(e.message); }
+		} catch (e) {
+			toast.error('Falha ao renomear', e.message);
+		}
 	}
 
 	function downloadEntry(path) {
-		const tok = encodeURIComponent(window.sessionStorage.getItem('pinas.auth')
-			? JSON.parse(window.sessionStorage.getItem('pinas.auth')).accessToken : '');
-		// Em produção poderíamos usar um pre-signed URL temporário no backend.
-		// Aqui passamos o token em fetch + criamos blob.
 		(async () => {
-			const res = await api('/files/download', { query: { path }, raw: true });
-			if (!res.ok) { alert('falha no download'); return; }
-			const blob = await res.blob();
-			const url = URL.createObjectURL(blob);
+			try {
+				const res = await api('/files/download', { query: { path }, raw: true });
+				if (!res.ok) {
+					toast.error('Falha no download');
+					return;
+				}
+				const blob = await res.blob();
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = path.split('/').pop();
+				a.click();
+				URL.revokeObjectURL(url);
+			} catch (e) {
+				toast.error('Falha no download', e.message);
+			}
+		})();
+	}
 			const a = document.createElement('a');
 			a.href = url;
 			a.download = path.split('/').pop();

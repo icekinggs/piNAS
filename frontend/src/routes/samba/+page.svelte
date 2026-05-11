@@ -4,6 +4,7 @@
 	import { auth } from '$lib/stores/auth.js';
 	import { sambaApi } from '$lib/api/samba.js';
 	import { formatDate } from '$lib/utils/format.js';
+	import { toast } from '$lib/stores/toasts.js';
 	import ShareForm from '$lib/components/ShareForm.svelte';
 
 	let tab = 'shares'; // 'shares' | 'users' | 'status'
@@ -60,70 +61,92 @@
 		try {
 			if (editingShare === 'new') {
 				await sambaApi.createShare(payload);
+				toast.success('Share criado', `"${payload.name}" foi criado e está sendo aplicado no Samba.`);
 			} else {
 				await sambaApi.updateShare(editingShare.name, payload);
+				toast.success('Share atualizado', `"${payload.name}" foi salvo.`);
 			}
 			editingShare = null;
 			await loadAll();
 		} catch (e) {
-			alert(e.message);
+			toast.error('Falha ao salvar share', e.message);
 		}
 	}
 
 	async function deleteShare(sh) {
-		if (!confirm(`Excluir o share "${sh.name}"? A pasta ${sh.path} NÃO será apagada.`)) return;
+		const ok = await toast.confirm(`Excluir o share "${sh.name}"?`, {
+			message: `A pasta ${sh.path} NÃO será apagada — só o compartilhamento Samba.`,
+			destructive: true,
+			confirmLabel: 'Excluir share'
+		});
+		if (!ok) return;
 		try {
 			await sambaApi.deleteShare(sh.name);
+			toast.success('Share removido', `"${sh.name}" foi excluído.`);
 			await loadAll();
-		} catch (e) { alert(e.message); }
+		} catch (e) { toast.error('Falha ao excluir', e.message); }
 	}
 
 	// ----- users -----
 
 	async function createUser() {
 		if (!newUsername || newPassword.length < 6) {
-			alert('Username obrigatório, senha mínima 6 caracteres.');
+			toast.warn('Dados incompletos', 'Username obrigatório, senha mínima 6 caracteres.');
 			return;
 		}
 		userBusy = true;
 		try {
 			await sambaApi.createUser(newUsername, newPassword);
+			toast.success('Usuário SMB criado', `"${newUsername}" pode acessar shares agora.`);
 			newUsername = '';
 			newPassword = '';
 			creatingUser = false;
 			await loadAll();
 		} catch (e) {
-			alert(e.message);
+			toast.error('Falha ao criar usuário', e.message);
 		} finally {
 			userBusy = false;
 		}
 	}
 
 	async function changeUserPassword(u) {
+		// prompt() ainda é nativo — substituir requer um modal de input próprio.
+		// Por enquanto mantemos o prompt; toast só pra resposta.
 		const p = prompt(`Nova senha SMB para ${u.username}:`);
-		if (!p || p.length < 6) {
-			if (p) alert('Senha mínima 6 caracteres.');
+		if (!p) return;
+		if (p.length < 6) {
+			toast.warn('Senha curta', 'Mínimo 6 caracteres.');
 			return;
 		}
 		try {
 			await sambaApi.setUserPassword(u.username, p);
-			alert('Senha atualizada. O Samba vai aplicar em alguns segundos.');
-		} catch (e) { alert(e.message); }
+			toast.success('Senha atualizada', 'O Samba vai aplicar em alguns segundos.');
+		} catch (e) { toast.error('Falha ao atualizar senha', e.message); }
 	}
 
 	async function toggleUserDisabled(u) {
 		try {
 			await sambaApi.setUserDisabled(u.username, !u.disabled);
+			toast.success(
+				u.disabled ? 'Usuário ativado' : 'Usuário desativado',
+				`"${u.username}" agora está ${u.disabled ? 'ativo' : 'inativo'}.`
+			);
 			await loadAll();
-		} catch (e) { alert(e.message); }
+		} catch (e) { toast.error('Falha', e.message); }
 	}
 
 	async function deleteUser(u) {
-		if (!confirm(`Excluir usuário SMB "${u.username}"? (Não apaga arquivos.)`)) return;
+		const ok = await toast.confirm(`Excluir usuário SMB "${u.username}"?`, {
+			message: 'Não apaga arquivos do disco — apenas remove o usuário do Samba.',
+			destructive: true,
+			confirmLabel: 'Excluir usuário'
+		});
+		if (!ok) return;
 		try {
 			await sambaApi.deleteUser(u.username);
+			toast.success('Usuário removido', `"${u.username}" foi excluído.`);
 			await loadAll();
-		} catch (e) { alert(e.message); }
+		} catch (e) { toast.error('Falha ao excluir', e.message); }
 	}
 
 	$: usernameList = users.map((u) => u.username);

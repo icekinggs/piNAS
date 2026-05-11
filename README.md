@@ -47,7 +47,6 @@ Alternativa minimalista ao **TrueNAS / OpenMediaVault / CasaOS**:
 ssh seu_usuario@pinas.local
 git clone https://github.com/icekinggs/piNAS.git
 cd piNAS
-chmod +x bootstrap.sh
 sudo ./bootstrap.sh
 ```
 
@@ -58,7 +57,7 @@ Espera ~20 min. No final imprime URL e senha do admin. Pronto.
 ✅ **Conflito de portas** — Se 80/443 já estão em uso (Pi-hole, etc), usa 8080/8443
 ✅ **UID:GID do dono dos dados** — Container roda com o mesmo UID:GID, sem problema de permissão
 ✅ **Existência de Docker/Node** — Pula reinstalação se já presentes
-✅ **Hostname mDNS** — Configura `https://pinas.local`
+✅ **Hostname mDNS** — Configura `https://<seu-hostname>.local`
 
 ---
 
@@ -76,10 +75,10 @@ Cria pasta de dados em `/srv/pinas/data/`, gerenciada exclusivamente pelo PiNAS.
 
 ### B. Integrar com Samba existente / pasta atual
 
-Se você já tem Samba compartilhando uma pasta (ex: `/home/user`) e quer o painel mostrando os mesmos arquivos:
+Se você já tem Samba compartilhando uma pasta (ex: `/home/gustavo`) e quer o painel mostrando os mesmos arquivos:
 
 ```bash
-sudo DATA_DIR=/home/user ./bootstrap.sh
+sudo DATA_DIR=/home/gustavo ./bootstrap.sh
 ```
 
 O painel web e o Samba vão enxergar os mesmos arquivos. Mexer num lado reflete no outro.
@@ -138,6 +137,46 @@ Após `bootstrap.sh` terminar:
 3. Aviso de certificado é normal — TLS local. Clica em **Avançado** → **Continuar**.
 
 4. Login: `admin` + senha do passo 1.
+
+---
+
+## 🆘 Esqueci a senha do admin
+
+Não precisa reinstalar. Reseta direto pelo container:
+
+```bash
+# Gera senha nova aleatória de 24 caracteres
+sudo docker compose exec pinas-api pinas reset-admin
+
+# Ou define a senha que você quiser (mínimo 8 caracteres)
+sudo docker compose exec pinas-api pinas reset-admin --password='MinhaSenh@2026'
+
+# Se o admin tem outro nome
+sudo docker compose exec pinas-api pinas reset-admin --username=gustavo --password='X'
+```
+
+A senha gerada aparece **uma vez** no output do comando — anote.
+Se o usuário estava desabilitado, ele é re-habilitado.
+
+---
+
+## ⚡ Instalação mais rápida com release oficial
+
+A partir da `v0.3.0`, o bootstrap baixa o **frontend pré-buildado** do GitHub Release
+em vez de compilar local. Isso pula a etapa mais lenta do install no Pi 4
+(de ~3 min com possibilidade de OOM pra ~5 segundos de download).
+
+Funciona automaticamente se você clonar do branch `main` e existir release publicada.
+
+Pra forçar build local (útil pra desenvolvimento):
+```bash
+PINAS_SKIP_TARBALL=1 sudo -E ./bootstrap.sh
+```
+
+Pra usar uma versão específica:
+```bash
+PINAS_VERSION=0.3.0 sudo -E ./bootstrap.sh
+```
 
 ---
 
@@ -275,14 +314,32 @@ Windows às vezes não tem mDNS. Soluções:
 1. Instala [Bonjour Print Services](https://support.apple.com/downloads/bonjour-for-windows) (Apple, gratuito)
 2. Ou usa o IP direto: `https://192.168.x.x:8443`
 
-### Reset total
+### Reset total / desinstalar
+
+PiNAS tem script de desinstalação que é o oposto do bootstrap — limpa tudo de forma segura:
 
 ```bash
-sudo systemctl disable --now pinas
-cd /opt/pinas && sudo docker compose down -v
-sudo rm -rf /opt/pinas /srv/pinas /root/.pinas /etc/systemd/system/pinas.service
-sudo systemctl daemon-reload
+# Modo seguro (default): remove serviços e código, MANTÉM seus dados
+sudo /opt/pinas/uninstall.sh
+
+# Apaga TUDO (sem volta — banco, secrets, configs)
+sudo /opt/pinas/uninstall.sh --purge
+
+# Apaga tudo mas deixa o Samba instalado
+sudo /opt/pinas/uninstall.sh --purge --keep-samba
+
+# Pré-visualiza sem executar nada
+sudo /opt/pinas/uninstall.sh --dry-run
 ```
+
+O script:
+- Para containers Docker e remove imagens
+- Desabilita units systemd
+- Limpa bloco `PINAS-MANAGED` do `/etc/samba/smb.conf` (preservando o resto)
+- Remove usuários SMB órfãos criados pelo PiNAS
+- Tira regras UFW das portas alternativas
+- Remove entrada `/srv/pinas/data` do `/etc/fstab` (se houver)
+- Backups automáticos antes de modificar `/etc/samba/smb.conf` e `/etc/fstab`
 
 ---
 

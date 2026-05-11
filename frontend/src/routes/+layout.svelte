@@ -6,6 +6,7 @@
 	import { auth } from '$lib/stores/auth.js';
 	import { api } from '$lib/api/client.js';
 	import Sidebar from '$lib/components/Sidebar.svelte';
+	import ToastContainer from '$lib/components/ToastContainer.svelte';
 
 	let booting = true;
 
@@ -48,6 +49,9 @@
 		</main>
 	</div>
 {/if}
+
+<!-- Toasts globais — renderiza acima de tudo, em qualquer rota. -->
+<ToastContainer />
 
 <style>
 	.shell {
