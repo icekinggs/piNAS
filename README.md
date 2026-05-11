@@ -160,6 +160,27 @@ Se o usuário estava desabilitado, ele é re-habilitado.
 
 ---
 
+## 🔌 Mudar as portas depois da instalação
+
+Use o comando `pinas-ports` instalado pelo bootstrap:
+
+```bash
+# Interativo (pergunta as portas)
+sudo pinas-ports
+
+# Direto: HTTP, HTTPS
+sudo pinas-ports 8080 8443
+
+# Só mostrar portas atuais
+sudo pinas-ports --show
+```
+
+O script faz backup do `docker-compose.yml`, valida que as portas não estão em uso por outro processo, atualiza, e reinicia o stack.
+
+**Defaults na instalação:** `8080` (HTTP) e `8443` (HTTPS). Pra usar 80/443 escolhe explicitamente quando o bootstrap perguntar (ou roda com `HTTP_PORT=80 HTTPS_PORT=443 sudo -E ./bootstrap.sh`).
+
+---
+
 ## ⚡ Instalação mais rápida com release oficial
 
 A partir da `v0.3.0`, o bootstrap baixa o **frontend pré-buildado** do GitHub Release

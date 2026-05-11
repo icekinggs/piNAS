@@ -12,8 +12,8 @@
 # Variáveis opcionais (use com `sudo VAR=valor ./bootstrap.sh`):
 #   DATA_DIR        Onde ficam os arquivos do NAS. Padrão: /srv/pinas/data
 #                   Pra integrar com Samba existente: DATA_DIR=/home/seu_usuario
-#   HTTP_PORT       Porta HTTP. Padrão: auto-detecta (80 ou 8080 se ocupada)
-#   HTTPS_PORT      Porta HTTPS. Padrão: auto-detecta (443 ou 8443 se ocupada)
+#   HTTP_PORT       Porta HTTP. Padrão: 8080 (pergunta se interativo)
+#   HTTPS_PORT      Porta HTTPS. Padrão: 8443 (pergunta se interativo)
 #   USB_DEVICE      Disco USB pra automount. Ex: /dev/sda1. Padrão: vazio
 #   SAMBA_USER      Usuário Samba a criar. Padrão: vazio
 #   INSTALL_DIR     Onde instalar o código. Padrão: /opt/pinas
@@ -50,31 +50,90 @@ fi
 ARCH=$(dpkg --print-architecture)
 ok "Ambiente OK ($(lsb_release -ds 2>/dev/null || echo desconhecido), $ARCH)"
 
-# ---------- detecção de portas ----------
-info "Verificando portas disponíveis..."
+# ---------- detecção e escolha de portas ----------
+info "Configurando portas..."
 port_in_use() {
-	ss -tln | awk '{print $4}' | grep -qE ":${1}\$"
+	ss -tln 2>/dev/null | awk '{print $4}' | grep -qE ":${1}\$"
 }
 
-if [[ -z "$HTTP_PORT" ]]; then
-	if port_in_use 80; then
-		HTTP_PORT=8080
-		WHO=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:80$/ {print $NF}' | head -1 | sed 's/users://;s/[",()]//g')
-		warn "Porta 80 em uso por: ${WHO:-?} → usando 8080"
-	else
-		HTTP_PORT=80
-	fi
+who_uses_port() {
+	local p="$1"
+	ss -tlnp 2>/dev/null | awk -v p=":$p\$" '$4 ~ p {print $NF}' \
+		| head -1 \
+		| sed 's/users:(("//; s/",.*//;s/[()"]//g'
+}
+
+# Valida que é número entre 1 e 65535.
+valid_port() {
+	[[ "$1" =~ ^[0-9]+$ ]] && (( $1 >= 1 && $1 <= 65535 ))
+}
+
+# Pergunta a porta de forma interativa, validando + checando conflito.
+# Se rodar não-interativo (sem TTY), usa o default sem perguntar.
+# Argumentos: $1 = label ("HTTP" ou "HTTPS"), $2 = default
+ask_port() {
+	local label="$1" default="$2" chosen=""
+	while true; do
+		if [[ -t 0 ]]; then
+			# Modo interativo: lê do TTY.
+			read -r -p "  Porta ${label} [${default}]: " chosen </dev/tty || chosen=""
+		fi
+		chosen="${chosen:-$default}"
+
+		if ! valid_port "$chosen"; then
+			warn "Porta inválida: '$chosen'. Use número entre 1 e 65535."
+			[[ -t 0 ]] || return 1
+			continue
+		fi
+
+		if port_in_use "$chosen"; then
+			local who; who=$(who_uses_port "$chosen")
+			warn "Porta ${chosen} em uso por: ${who:-processo desconhecido}"
+			if [[ -t 0 ]]; then
+				read -r -p "  Quer escolher outra? [S/n]: " ans </dev/tty || ans=""
+				if [[ "$ans" =~ ^[Nn]$ ]]; then
+					warn "Continuando com ${chosen} (vai dar conflito ao subir o stack)."
+					echo "$chosen"
+					return 0
+				fi
+				chosen=""
+				continue
+			else
+				warn "Continuando com ${chosen} via env var (vai dar conflito)."
+			fi
+		fi
+
+		echo "$chosen"
+		return 0
+	done
+}
+
+# Defaults: 8080/8443 (alternativas, mais seguro que 80/443 que costumam
+# conflitar com Pi-hole, nginx, apache em instalações existentes).
+# Quem quiser 80/443 só passar HTTP_PORT=80 HTTPS_PORT=443 ou digitar.
+HTTP_DEFAULT="${HTTP_PORT:-8080}"
+HTTPS_DEFAULT="${HTTPS_PORT:-8443}"
+
+echo
+if [[ -t 0 ]]; then
+	echo "  Pressione Enter pra usar o padrão, ou digite outra porta:"
 fi
-if [[ -z "$HTTPS_PORT" ]]; then
-	if port_in_use 443; then
-		HTTPS_PORT=8443
-		WHO=$(ss -tlnp 2>/dev/null | awk '$4 ~ /:443$/ {print $NF}' | head -1 | sed 's/users://;s/[",()]//g')
-		warn "Porta 443 em uso por: ${WHO:-?} → usando 8443"
-	else
-		HTTPS_PORT=443
-	fi
+
+# Se HTTP_PORT veio via env, não pergunta — só valida.
+if [[ -n "${HTTP_PORT:-}" && ! -t 0 ]]; then
+	HTTP_PORT="$HTTP_PORT"
+else
+	HTTP_PORT=$(ask_port "HTTP " "$HTTP_DEFAULT")
 fi
-ok "Portas: HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT"
+
+if [[ -n "${HTTPS_PORT:-}" && ! -t 0 ]]; then
+	HTTPS_PORT="$HTTPS_PORT"
+else
+	HTTPS_PORT=$(ask_port "HTTPS" "$HTTPS_DEFAULT")
+fi
+
+echo
+ok "Portas escolhidas: HTTP=${HTTP_PORT}, HTTPS=${HTTPS_PORT}"
 
 # ---------- 1. Pacotes ----------
 info "Instalando dependências..."
@@ -266,6 +325,14 @@ chmod +x "$INSTALL_DIR/scripts/samba-sync.sh"
 systemctl daemon-reload
 systemctl enable --now pinas-samba-sync.path
 ok "Watcher pinas-samba-sync.path ativo"
+
+# Instala o helper pinas-ports no PATH.
+if [[ -f "$INSTALL_DIR/scripts/pinas-ports" ]]; then
+	install -m 0755 "$INSTALL_DIR/scripts/pinas-ports" /usr/local/bin/pinas-ports
+	# Injeta o INSTALL_DIR real (não precisa env var depois).
+	sed -i "s|INSTALL_DIR=\"\${INSTALL_DIR:-/opt/pinas}\"|INSTALL_DIR=\"\${INSTALL_DIR:-$INSTALL_DIR}\"|" /usr/local/bin/pinas-ports
+	ok "Comando 'pinas-ports' instalado (mude portas depois com: sudo pinas-ports)"
+fi
 
 # Modo legado: se SAMBA_USER foi passado, ainda configura via script antigo.
 # Útil pra criar um usuário inicial junto com o setup.

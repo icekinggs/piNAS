@@ -138,6 +138,12 @@ for unit in pinas.service pinas-samba-sync.service pinas-samba-sync.path; do
 done
 run "systemctl daemon-reload"
 
+# Remove helper scripts do PATH.
+if [[ -f /usr/local/bin/pinas-ports ]]; then
+	run "rm -f /usr/local/bin/pinas-ports"
+	ok "pinas-ports removido"
+fi
+
 # ---------- 3. limpa bloco PINAS-MANAGED do smb.conf ----------
 if [[ -f /etc/samba/smb.conf ]]; then
 	if grep -q "PINAS-MANAGED BEGIN" /etc/samba/smb.conf 2>/dev/null; then

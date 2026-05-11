@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# pinas-ports — muda as portas do PiNAS depois da instalação.
+#
+# Uso:
+#   sudo pinas-ports                    # interativo
+#   sudo pinas-ports 8080 8443          # http=8080, https=8443
+#   sudo pinas-ports --show             # só mostra as portas atuais
+#
+# Lê e escreve no docker-compose.yml do INSTALL_DIR (default /opt/pinas).
+# Faz backup automático antes de qualquer mudança.
+
+set -euo pipefail
+
+INSTALL_DIR="${INSTALL_DIR:-/opt/pinas}"
+COMPOSE="$INSTALL_DIR/docker-compose.yml"
+
+# ---------- helpers ----------
+RED=$'\033[31m'; GRN=$'\033[32m'; YLW=$'\033[33m'; CYN=$'\033[36m'; RST=$'\033[0m'
+info() { echo "${CYN}ℹ${RST} $*"; }
+ok()   { echo "${GRN}✓${RST} $*"; }
+warn() { echo "${YLW}!${RST} $*" >&2; }
+err()  { echo "${RED}✗${RST} $*" >&2; }
+
+valid_port() {
+	[[ "$1" =~ ^[0-9]+$ ]] && (( $1 >= 1 && $1 <= 65535 ))
+}
+
+port_in_use() {
+	ss -tln 2>/dev/null | awk '{print $4}' | grep -qE ":${1}\$"
+}
+
+current_ports() {
+	# Extrai as portas atuais do compose. Formato esperado: - "8080:80"
+	local http https
+	http=$(grep -E '^\s*- "[0-9]+:80"' "$COMPOSE" | head -1 | sed -E 's/.*"([0-9]+):80".*/\1/' || echo "?")
+	https=$(grep -E '^\s*- "[0-9]+:443"' "$COMPOSE" | head -1 | sed -E 's/.*"([0-9]+):443".*/\1/' || echo "?")
+	echo "$http $https"
+}
+
+# ---------- pre-flight ----------
+if [[ $EUID -ne 0 ]]; then
+	err "Precisa rodar como root (sudo)."
+	exit 1
+fi
+if [[ ! -f "$COMPOSE" ]]; then
+	err "docker-compose.yml não encontrado em $INSTALL_DIR"
+	err "Set INSTALL_DIR=/caminho se o PiNAS está em outro lugar."
+	exit 1
+fi
+
+# ---------- modo --show ----------
+if [[ "${1:-}" == "--show" || "${1:-}" == "-s" ]]; then
+	read -r cur_http cur_https < <(current_ports)
+	echo "Portas atuais do PiNAS:"
+	echo "  HTTP:  $cur_http"
+	echo "  HTTPS: $cur_https"
+	exit 0
+fi
+
+# ---------- coleta novas portas ----------
+read -r cur_http cur_https < <(current_ports)
+info "Portas atuais: HTTP=$cur_http, HTTPS=$cur_https"
+echo
+
+NEW_HTTP="${1:-}"
+NEW_HTTPS="${2:-}"
+
+if [[ -z "$NEW_HTTP" ]]; then
+	read -r -p "  Nova porta HTTP  [$cur_http]: " NEW_HTTP
+	NEW_HTTP="${NEW_HTTP:-$cur_http}"
+fi
+if [[ -z "$NEW_HTTPS" ]]; then
+	read -r -p "  Nova porta HTTPS [$cur_https]: " NEW_HTTPS
+	NEW_HTTPS="${NEW_HTTPS:-$cur_https}"
+fi
+
+# ---------- validação ----------
+for label in "HTTP:$NEW_HTTP" "HTTPS:$NEW_HTTPS"; do
+	port="${label#*:}"
+	name="${label%:*}"
+	if ! valid_port "$port"; then
+		err "Porta $name inválida: '$port' (deve ser 1-65535)"
+		exit 2
+	fi
+done
+
+if [[ "$NEW_HTTP" == "$NEW_HTTPS" ]]; then
+	err "HTTP e HTTPS não podem ser a mesma porta."
+	exit 2
+fi
+
+# Verifica conflito (mas ignora se for o próprio Caddy nas portas atuais).
+for label in "HTTP:$NEW_HTTP:$cur_http" "HTTPS:$NEW_HTTPS:$cur_https"; do
+	IFS=: read -r name port current <<< "$label"
+	if [[ "$port" != "$current" ]] && port_in_use "$port"; then
+		warn "Porta $port ($name) já está em uso!"
+		read -r -p "  Continuar mesmo assim? [s/N]: " ans
+		[[ "$ans" =~ ^[Ss]$ ]] || { err "Cancelado."; exit 1; }
+	fi
+done
+
+if [[ "$NEW_HTTP" == "$cur_http" && "$NEW_HTTPS" == "$cur_https" ]]; then
+	ok "Portas já são essas. Nada a fazer."
+	exit 0
+fi
+
+# ---------- aplica ----------
+TS=$(date +%Y%m%d-%H%M%S)
+BACKUP="$COMPOSE.bak.$TS"
+info "Backup: $BACKUP"
+cp "$COMPOSE" "$BACKUP"
+
+# Ordem importa: UDP primeiro pra não pegar o resultado do TCP.
+sed -i.tmp \
+	-e "s|\"${cur_https}:443/udp\"|\"${NEW_HTTPS}:443/udp\"|g" \
+	-e "s|\"${cur_https}:443\"|\"${NEW_HTTPS}:443\"|g" \
+	-e "s|\"${cur_http}:80\"|\"${NEW_HTTP}:80\"|g" \
+	"$COMPOSE"
+rm -f "${COMPOSE}.tmp"
+
+ok "docker-compose.yml atualizado: HTTP=$NEW_HTTP, HTTPS=$NEW_HTTPS"
+
+# ---------- restart ----------
+echo
+read -r -p "Reiniciar o stack agora? [S/n]: " ans
+if [[ ! "$ans" =~ ^[Nn]$ ]]; then
+	cd "$INSTALL_DIR"
+	info "Reiniciando..."
+	docker compose down
+	docker compose up -d
+	sleep 5
+	docker compose ps
+	echo
+	ok "Pronto! Acesse em https://<seu-host>:${NEW_HTTPS}"
+else
+	warn "Não esqueça de rodar: cd $INSTALL_DIR && docker compose down && docker compose up -d"
+fi
