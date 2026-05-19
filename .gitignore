@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Node / Vite
+node_modules/
+frontend/dist/
+
+# Local runtime data
+data/*
+!data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Build outputs
+dist/
+*.img
+*.img.xz
+*.sha256
+
+# Local captures and editor files
+frontend-dashboard.png
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

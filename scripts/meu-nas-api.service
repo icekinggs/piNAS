@@ -1,0 +1,21 @@
+[Unit]
+Description=Meu NAS API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meunas
+Group=meunas
+WorkingDirectory=/opt/meu-nas/backend
+EnvironmentFile=/opt/meu-nas/backend/.env
+ExecStart=/opt/meu-nas/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/meu-nas/data
+
+[Install]
+WantedBy=multi-user.target

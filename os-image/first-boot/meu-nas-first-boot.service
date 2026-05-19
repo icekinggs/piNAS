@@ -1,0 +1,13 @@
+[Unit]
+Description=Meu NAS first boot provisioning
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/opt/meu-nas/data/.first-boot-complete
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/meu-nas-first-boot.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

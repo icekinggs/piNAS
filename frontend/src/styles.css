@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 180 25% 98%;
+  --foreground: 210 20% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 210 20% 12%;
+  --muted: 190 16% 92%;
+  --muted-foreground: 210 9% 42%;
+  --primary: 173 80% 28%;
+  --primary-foreground: 0 0% 100%;
+  --border: 190 15% 84%;
+}
+
+.dark {
+  --background: 210 18% 10%;
+  --foreground: 180 18% 95%;
+  --card: 210 16% 14%;
+  --card-foreground: 180 18% 95%;
+  --muted: 210 14% 20%;
+  --muted-foreground: 190 10% 70%;
+  --primary: 172 68% 42%;
+  --primary-foreground: 210 20% 8%;
+  --border: 210 12% 24%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+@layer components {
+  .field {
+    @apply h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none ring-primary/30 transition focus:ring-4;
+  }
+
+  .error {
+    @apply min-h-5 text-xs text-red-600;
+  }
+
+  .button-primary {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .button-secondary {
+    @apply inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-medium transition hover:bg-muted;
+  }
+
+  .panel {
+    @apply rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm;
+  }
+
+  .panel-title {
+    @apply mb-4 text-base font-semibold;
+  }
+}

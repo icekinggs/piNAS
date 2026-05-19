@@ -1,0 +1,33 @@
+#cloud-config
+hostname: meu-nas
+manage_etc_hosts: true
+package_update: false
+package_upgrade: false
+
+users:
+  - name: meunas-admin
+    groups: [adm, sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+
+write_files:
+  - path: /etc/systemd/system/meu-nas-first-boot.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Meu NAS first boot provisioning
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/meu-nas-first-boot.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - systemctl daemon-reload
+  - systemctl enable --now meu-nas-first-boot.service
